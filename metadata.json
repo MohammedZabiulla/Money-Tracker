@@ -1,0 +1,6 @@
+{
+  "name": "Money Tracker",
+  "description": "A private, offline-first personal finance application with a reliable accounting engine, Firebase Firestore cloud sync, Google Authentication, Indian Rupee support, cards, loans, recurring payments, subscriptions, investments, 3D brand emblems, and comprehensive analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
