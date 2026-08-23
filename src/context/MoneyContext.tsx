@@ -7,6 +7,7 @@ import {
   Merchant,
   PaymentApp,
   Transaction,
+  TransactionTemplate,
   RecurringTransaction,
   Subscription,
   Budget,
@@ -45,6 +46,7 @@ interface MoneyContextType {
   merchants: Merchant[];
   paymentApps: PaymentApp[];
   transactions: Transaction[];
+  templates: TransactionTemplate[];
   recurring: RecurringTransaction[];
   subscriptions: Subscription[];
   budgets: Budget[];
@@ -85,6 +87,14 @@ interface MoneyContextType {
   emptyTrash: () => void;
   emptyAllTrash: () => void;
   restoreAllTrash: () => void;
+
+  // Transaction Templates Actions
+  addTemplate: (template: Omit<TransactionTemplate, 'id' | 'createdAt' | 'updatedAt' | 'usageCount'>) => string;
+  updateTemplate: (id: string, updates: Partial<TransactionTemplate>) => void;
+  deleteTemplate: (id: string) => void;
+  toggleFavoriteTemplate: (id: string) => void;
+  recordFromTemplate: (templateId: string, customAmount?: number, customDate?: string) => string;
+  saveTransactionAsTemplate: (tx: Partial<Transaction>, templateName?: string) => string;
   
   addAccount: (account: Omit<Account, 'id' | 'createdAt' | 'updatedAt' | 'calculatedBalance'>) => string;
   updateAccount: (id: string, updates: Partial<Account>) => void;
@@ -448,6 +458,149 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       budgets: prev.budgets.map(b => ({ ...b, isDeleted: false, deletedAt: undefined })),
       subscriptions: prev.subscriptions.map(s => ({ ...s, isDeleted: false, deletedAt: undefined })),
     }));
+  }, []);
+
+  // ----------------------------------------------------
+  // TRANSACTION TEMPLATES
+  // ----------------------------------------------------
+  const addTemplate = useCallback((template: Omit<TransactionTemplate, 'id' | 'createdAt' | 'updatedAt' | 'usageCount'>): string => {
+    const id = `tmpl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newTemplate: TransactionTemplate = {
+      ...template,
+      id,
+      usageCount: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    setState(prev => ({
+      ...prev,
+      templates: [newTemplate, ...(prev.templates || [])],
+    }));
+    return id;
+  }, []);
+
+  const updateTemplate = useCallback((id: string, updates: Partial<TransactionTemplate>) => {
+    setState(prev => ({
+      ...prev,
+      templates: (prev.templates || []).map(t =>
+        t.id === id ? { ...t, ...updates, updatedAt: Date.now() } : t
+      ),
+    }));
+  }, []);
+
+  const deleteTemplate = useCallback((id: string) => {
+    setState(prev => ({
+      ...prev,
+      templates: (prev.templates || []).filter(t => t.id !== id),
+    }));
+  }, []);
+
+  const toggleFavoriteTemplate = useCallback((id: string) => {
+    setState(prev => ({
+      ...prev,
+      templates: (prev.templates || []).map(t =>
+        t.id === id ? { ...t, isFavorite: !t.isFavorite, updatedAt: Date.now() } : t
+      ),
+    }));
+  }, []);
+
+  const recordFromTemplate = useCallback((templateId: string, customAmount?: number, customDate?: string): string => {
+    let createdTxId = '';
+    setState(prev => {
+      const tmpl = (prev.templates || []).find(t => t.id === templateId);
+      if (!tmpl) return prev;
+
+      const txAmount = customAmount !== undefined && customAmount > 0 ? customAmount : (tmpl.amount || 0);
+      const dateStr = customDate || new Date().toISOString().substring(0, 10);
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const newTxId = 'tx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+      createdTxId = newTxId;
+
+      const newTx: Transaction = {
+        id: newTxId,
+        amount: txAmount,
+        type: tmpl.type,
+        date: dateStr,
+        time: timeStr,
+        timestamp: Date.now(),
+        categoryId: tmpl.categoryId,
+        categoryName: tmpl.categoryName,
+        subcategory: tmpl.subcategory,
+        merchantName: tmpl.merchantName,
+        accountId: tmpl.accountId,
+        accountName: tmpl.accountName,
+        creditCardId: tmpl.creditCardId,
+        creditCardName: tmpl.creditCardName,
+        toAccountId: tmpl.toAccountId,
+        toAccountName: tmpl.toAccountName,
+        paymentAppId: tmpl.paymentAppId,
+        paymentAppName: tmpl.paymentAppName,
+        notes: tmpl.notes,
+        tags: tmpl.tags,
+        splits: tmpl.splits,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      const updatedTemplates = (prev.templates || []).map(t =>
+        t.id === templateId
+          ? { ...t, usageCount: (t.usageCount || 0) + 1, lastUsedAt: Date.now(), updatedAt: Date.now() }
+          : t
+      );
+
+      return {
+        ...prev,
+        transactions: [newTx, ...prev.transactions],
+        templates: updatedTemplates,
+      };
+    });
+
+    return createdTxId;
+  }, []);
+
+  const saveTransactionAsTemplate = useCallback((tx: Partial<Transaction>, templateName?: string): string => {
+    const id = `tmpl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    let resolvedName = templateName;
+    if (!resolvedName) {
+      resolvedName = tx.merchantName || tx.categoryName || 'Quick Template';
+    }
+
+    const newTemplate: TransactionTemplate = {
+      id,
+      name: resolvedName,
+      icon: 'Zap',
+      color: '#059669',
+      type: tx.type || 'EXPENSE',
+      amount: tx.amount,
+      categoryId: tx.categoryId,
+      categoryName: tx.categoryName,
+      subcategory: tx.subcategory,
+      merchantName: tx.merchantName,
+      accountId: tx.accountId,
+      accountName: tx.accountName,
+      creditCardId: tx.creditCardId,
+      creditCardName: tx.creditCardName,
+      toAccountId: tx.toAccountId,
+      toAccountName: tx.toAccountName,
+      paymentAppId: tx.paymentAppId,
+      paymentAppName: tx.paymentAppName,
+      notes: tx.notes,
+      tags: tx.tags,
+      splits: tx.splits,
+      isFavorite: true,
+      usageCount: 1,
+      lastUsedAt: Date.now(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    setState(prev => ({
+      ...prev,
+      templates: [newTemplate, ...(prev.templates || [])],
+    }));
+
+    return id;
   }, []);
 
   // ----------------------------------------------------
@@ -1579,6 +1732,7 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         merchants: state.merchants,
         paymentApps: state.paymentApps,
         transactions: state.transactions,
+        templates: state.templates || [],
         recurring: state.recurring,
         subscriptions: state.subscriptions,
         budgets: state.budgets,
@@ -1613,6 +1767,12 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         emptyTrash,
         emptyAllTrash,
         restoreAllTrash,
+        addTemplate,
+        updateTemplate,
+        deleteTemplate,
+        toggleFavoriteTemplate,
+        recordFromTemplate,
+        saveTransactionAsTemplate,
         addAccount,
         updateAccount,
         deleteAccount,

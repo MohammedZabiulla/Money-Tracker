@@ -16,6 +16,8 @@ import { GoalManagementModal } from '../goals/GoalManagementModal';
 import { PaymentAppManagementModal } from '../paymentApps/PaymentAppManagementModal';
 import { SMSImportModal } from '../transactions/SMSImportModal';
 import { CashewImportModal } from './CashewImportModal';
+import { CashewExportModal } from './CashewExportModal';
+import { TemplateManagementModal } from '../templates/TemplateManagementModal';
 import { BudgetManagementModal } from './BudgetManagementModal';
 import { LoanManagementModal } from './LoanManagementModal';
 import {
@@ -81,6 +83,8 @@ export const MoreView: React.FC = () => {
   const [showPaymentAppModal, setShowPaymentAppModal] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [showLoanModal, setShowLoanModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showCashewExportModal, setShowCashewExportModal] = useState(false);
 
   // Wipe / Reset Confirmation Modal State
   const [wipeModalType, setWipeModalType] = useState<
@@ -467,6 +471,29 @@ export const MoreView: React.FC = () => {
               UPI & Payment Channels
             </p>
           </button>
+
+          {/* Quick Transaction Templates */}
+          <button
+            onClick={() => setShowTemplateModal(true)}
+            className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-amber-200/80 dark:border-amber-900/60 hover:border-amber-500 text-left transition-all group shadow-xs hover:shadow-md flex flex-col justify-between"
+          >
+            <div>
+              <div className="mb-2.5 group-hover:scale-105 transition-transform inline-block">
+                <Emblem3D icon="Zap" from="#f59e0b" to="#d97706" finish="gloss" shape="squircle" size="md" glow={true} />
+              </div>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                  Templates
+                </h4>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-bold">
+                  {(context.templates || []).length}
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2">
+              1-Tap Routine Loggers
+            </p>
+          </button>
         </div>
       </div>
 
@@ -475,11 +502,11 @@ export const MoreView: React.FC = () => {
       {/* --------------------------------------------------------------------- */}
       <div className="space-y-3">
         <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider px-1">
-          Data Migration & Universal Importers
+          Data Migration, Templates & Universal Exporters
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Cashew Migration Card */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Cashew Importer Card */}
           <div className="p-5 rounded-3xl bg-gradient-to-br from-amber-500/10 via-emerald-500/10 to-teal-500/10 dark:from-amber-950/40 dark:via-emerald-950/40 dark:to-teal-950/40 border border-amber-300/80 dark:border-amber-700/80 shadow-xs flex flex-col justify-between space-y-4">
             <div className="flex items-start space-x-3.5">
               <Emblem3D
@@ -494,10 +521,10 @@ export const MoreView: React.FC = () => {
               />
               <div>
                 <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-                  Cashew App Migration Hub
+                  Cashew Importer
                 </h4>
                 <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
-                  Migrate Outbox CSV, SQLite SQL backups, or JSON files with full account and currency mapping.
+                  Migrate Outbox CSV, SQLite SQL backups, or JSON files with full account mapping.
                 </p>
               </div>
             </div>
@@ -508,6 +535,38 @@ export const MoreView: React.FC = () => {
             >
               <Upload size={14} />
               <span>Launch Cashew Importer</span>
+            </button>
+          </div>
+
+          {/* Cashew & Multi-Format Exporter Card */}
+          <div className="p-5 rounded-3xl bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-cyan-500/10 dark:from-emerald-950/40 dark:via-teal-950/40 dark:to-cyan-950/40 border border-emerald-300/80 dark:border-emerald-700/80 shadow-xs flex flex-col justify-between space-y-4">
+            <div className="flex items-start space-x-3.5">
+              <Emblem3D
+                icon="FileSpreadsheet"
+                from="#10b981"
+                via="#059669"
+                to="#047857"
+                finish="metallic"
+                shape="squircle"
+                size="md"
+                glow={true}
+              />
+              <div>
+                <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                  Cashew Export Hub
+                </h4>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                  Export transactions in 100% standard Cashew CSV format, custom date ranges, and template files.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowCashewExportModal(true)}
+              className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-all active:scale-98"
+            >
+              <Download size={14} />
+              <span>Open Cashew Exporter</span>
             </button>
           </div>
 
@@ -547,31 +606,39 @@ export const MoreView: React.FC = () => {
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-              Local Backups & Spreadsheet Export
+              Local Backups, Templates & Spreadsheet Export
             </span>
             <span className="text-[10px] text-slate-400 font-semibold">Offline First</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+            <button
+              onClick={() => setShowCashewExportModal(true)}
+              className="p-3 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 hover:bg-emerald-100/70 text-emerald-900 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/70 flex items-center space-x-2 text-xs font-bold transition-all"
+            >
+              <FileSpreadsheet size={16} className="text-emerald-600 shrink-0" />
+              <span className="truncate">Cashew CSV</span>
+            </button>
+
             <button
               onClick={() => exportToExcel(context as any, 'xlsx')}
-              className="p-3 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 hover:bg-emerald-100/70 text-emerald-900 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/70 flex items-center space-x-2.5 text-xs font-bold transition-all"
+              className="p-3 rounded-2xl bg-teal-50/60 dark:bg-teal-950/30 hover:bg-teal-100/70 text-teal-900 dark:text-teal-300 border border-teal-200/70 dark:border-teal-800/70 flex items-center space-x-2 text-xs font-bold transition-all"
             >
-              <FileSpreadsheet size={16} className="text-emerald-600" />
-              <span>Export Excel (.xlsx)</span>
+              <FileSpreadsheet size={16} className="text-teal-600 shrink-0" />
+              <span className="truncate">Excel Workbook</span>
             </button>
 
             <button
               onClick={handleBackupDownload}
-              className="p-3 rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 hover:bg-blue-100/70 text-blue-900 dark:text-blue-300 border border-blue-200/70 dark:border-blue-800/70 flex items-center space-x-2.5 text-xs font-bold transition-all"
+              className="p-3 rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 hover:bg-blue-100/70 text-blue-900 dark:text-blue-300 border border-blue-200/70 dark:border-blue-800/70 flex items-center space-x-2 text-xs font-bold transition-all"
             >
-              <FileDown size={16} className="text-blue-600" />
-              <span>Download JSON Backup</span>
+              <FileDown size={16} className="text-blue-600 shrink-0" />
+              <span className="truncate">JSON Backup</span>
             </button>
 
-            <label className="cursor-pointer p-3 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 hover:bg-indigo-100/70 text-indigo-900 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/70 flex items-center space-x-2.5 text-xs font-bold transition-all">
-              <Upload size={16} className="text-indigo-600" />
-              <span>Restore JSON Backup</span>
+            <label className="cursor-pointer p-3 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 hover:bg-indigo-100/70 text-indigo-900 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/70 flex items-center space-x-2 text-xs font-bold transition-all">
+              <Upload size={16} className="text-indigo-600 shrink-0" />
+              <span className="truncate">Restore JSON</span>
               <input type="file" accept=".json" onChange={handleRestoreUpload} className="hidden" />
             </label>
           </div>
@@ -764,6 +831,16 @@ export const MoreView: React.FC = () => {
       <CashewImportModal
         isOpen={showCashewModal}
         onClose={() => setShowCashewModal(false)}
+      />
+
+      <CashewExportModal
+        isOpen={showCashewExportModal}
+        onClose={() => setShowCashewExportModal(false)}
+      />
+
+      <TemplateManagementModal
+        isOpen={showTemplateModal}
+        onClose={() => setShowTemplateModal(false)}
       />
 
       <PaymentAppManagementModal

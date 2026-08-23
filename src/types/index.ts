@@ -492,6 +492,36 @@ export interface Goal {
   deletedAt?: number;
 }
 
+export interface TransactionTemplate {
+  id: string;
+  name: string; // e.g. "Morning Chai / Coffee", "Metro Commute", "Swiggy Dinner"
+  icon: string; // Lucide icon or emoji
+  color: string; // Hex color
+  type: TransactionType;
+  amount?: number; // Optional preset amount (undefined or 0 for prompt)
+  categoryId?: string;
+  categoryName?: string;
+  subcategory?: string;
+  merchantName?: string;
+  accountId?: string;
+  accountName?: string;
+  creditCardId?: string;
+  creditCardName?: string;
+  toAccountId?: string;
+  toAccountName?: string;
+  paymentAppId?: string;
+  paymentAppName?: string;
+  notes?: string;
+  tags?: string[];
+  splits?: SplitItem[];
+  isFavorite?: boolean;
+  order?: number;
+  usageCount: number;
+  lastUsedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface CurrencyRate {
   code: string;
   name: string;
@@ -509,6 +539,7 @@ export interface AppBackupData {
   merchants: Merchant[];
   paymentApps: PaymentApp[];
   transactions: Transaction[];
+  templates?: TransactionTemplate[];
   recurring: RecurringTransaction[];
   subscriptions: Subscription[];
   budgets: Budget[];
@@ -520,4 +551,21 @@ export interface AppBackupData {
   settings: AppSettings;
 }
 
-export type LocalStorageState = AppBackupData;
+export interface CashewExportOptions {
+  format: 'cashew_csv' | 'xlsx' | 'json' | 'html_pdf' | 'templates_csv';
+  dateRange: 'ALL' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'CUSTOM';
+  startDate?: string;
+  endDate?: string;
+  accountId?: string; // 'ALL' or specific account/card ID
+  categoryId?: string; // 'ALL' or specific category ID
+  type?: 'ALL' | 'EXPENSE' | 'INCOME' | 'TRANSFER';
+  includeNotes?: boolean;
+  includeTags?: boolean;
+  includeSplits?: boolean;
+  includeDeleted?: boolean;
+}
+
+export type LocalStorageState = Omit<AppBackupData, 'version' | 'exportedAt'> & {
+  version?: number;
+  exportedAt?: string;
+};

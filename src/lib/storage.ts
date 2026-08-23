@@ -5,6 +5,7 @@ import {
   Merchant,
   PaymentApp,
   Transaction,
+  TransactionTemplate,
   RecurringTransaction,
   Subscription,
   Budget,
@@ -15,8 +16,9 @@ import {
   AppSettings,
   AppBackupData,
   Goal,
+  CashewExportOptions,
 } from '../types';
-import { DEFAULT_CATEGORIES, DEFAULT_PAYMENT_APPS, DEFAULT_APP_SETTINGS } from './constants';
+import { DEFAULT_CATEGORIES, DEFAULT_PAYMENT_APPS, DEFAULT_APP_SETTINGS, DEFAULT_TEMPLATES } from './constants';
 import { getDemoData } from './demoData';
 import * as XLSX from 'xlsx';
 
@@ -27,6 +29,7 @@ const STORAGE_KEYS = {
   MERCHANTS: 'mt_merchants_v1',
   PAYMENT_APPS: 'mt_payment_apps_v1',
   TRANSACTIONS: 'mt_transactions_v1',
+  TEMPLATES: 'mt_templates_v1',
   RECURRING: 'mt_recurring_v1',
   SUBSCRIPTIONS: 'mt_subscriptions_v1',
   BUDGETS: 'mt_budgets_v1',
@@ -46,10 +49,11 @@ export interface LocalStorageState {
   merchants: Merchant[];
   paymentApps: PaymentApp[];
   transactions: Transaction[];
+  templates?: TransactionTemplate[];
   recurring: RecurringTransaction[];
   subscriptions: Subscription[];
   budgets: Budget[];
-  goals: Goal[];
+  goals?: Goal[];
   loans: Loan[];
   investments: Investment[];
   debts: DebtRecord[];
@@ -74,6 +78,7 @@ export function loadInitialState(): LocalStorageState {
         merchants: demo.merchants,
         paymentApps: DEFAULT_PAYMENT_APPS,
         transactions: demo.transactions,
+        templates: DEFAULT_TEMPLATES,
         recurring: demo.recurring,
         subscriptions: demo.subscriptions,
         budgets: demo.budgets,
@@ -120,6 +125,7 @@ export function loadInitialState(): LocalStorageState {
     const merchants = parseJson<Merchant[]>(localStorage.getItem(STORAGE_KEYS.MERCHANTS), []);
     const paymentApps = parseJson<PaymentApp[]>(localStorage.getItem(STORAGE_KEYS.PAYMENT_APPS), DEFAULT_PAYMENT_APPS);
     const transactions = parseJson<Transaction[]>(localStorage.getItem(STORAGE_KEYS.TRANSACTIONS), []);
+    const templates = parseJson<TransactionTemplate[]>(localStorage.getItem(STORAGE_KEYS.TEMPLATES), DEFAULT_TEMPLATES);
     const recurring = parseJson<RecurringTransaction[]>(localStorage.getItem(STORAGE_KEYS.RECURRING), []);
     const subscriptions = parseJson<Subscription[]>(localStorage.getItem(STORAGE_KEYS.SUBSCRIPTIONS), []);
     const budgets = parseJson<Budget[]>(localStorage.getItem(STORAGE_KEYS.BUDGETS), []);
@@ -137,6 +143,7 @@ export function loadInitialState(): LocalStorageState {
       merchants,
       paymentApps: paymentApps.length ? paymentApps : DEFAULT_PAYMENT_APPS,
       transactions,
+      templates: templates && templates.length > 0 ? templates : DEFAULT_TEMPLATES,
       recurring,
       subscriptions,
       budgets,
@@ -156,6 +163,7 @@ export function loadInitialState(): LocalStorageState {
       merchants: [],
       paymentApps: DEFAULT_PAYMENT_APPS,
       transactions: [],
+      templates: DEFAULT_TEMPLATES,
       recurring: [],
       subscriptions: [],
       budgets: [],
@@ -186,6 +194,7 @@ export function saveFullState(state: LocalStorageState): void {
     localStorage.setItem(STORAGE_KEYS.MERCHANTS, JSON.stringify(state.merchants));
     localStorage.setItem(STORAGE_KEYS.PAYMENT_APPS, JSON.stringify(state.paymentApps));
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(state.transactions));
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(state.templates || []));
     localStorage.setItem(STORAGE_KEYS.RECURRING, JSON.stringify(state.recurring));
     localStorage.setItem(STORAGE_KEYS.SUBSCRIPTIONS, JSON.stringify(state.subscriptions));
     localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(state.budgets));
@@ -221,6 +230,8 @@ export function exportJsonBackup(state: LocalStorageState): void {
   URL.revokeObjectURL(url);
 }
 
+export const exportFullBackupJson = exportJsonBackup;
+
 /**
  * Validates and restores a JSON backup file
  */
@@ -238,6 +249,7 @@ export function restoreJsonBackup(jsonString: string): LocalStorageState | null 
       merchants: data.merchants || [],
       paymentApps: data.paymentApps || DEFAULT_PAYMENT_APPS,
       transactions: data.transactions || [],
+      templates: data.templates && data.templates.length > 0 ? data.templates : DEFAULT_TEMPLATES,
       recurring: data.recurring || [],
       subscriptions: data.subscriptions || [],
       budgets: data.budgets || [],
@@ -255,6 +267,214 @@ export function restoreJsonBackup(jsonString: string): LocalStorageState | null 
     console.error('Backup restore failed:', err);
     return null;
   }
+}
+
+/**
+ * Filter transactions based on CashewExportOptions
+ */
+export function filterTransactionsForExport(
+  transactions: Transaction[],
+  options: CashewExportOptions
+): Transaction[] {
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthStr = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
+  
+  const currentYearStr = `${now.getFullYear()}`;
+
+  return transactions.filter(t => {
+    // Deleted filter
+    if (!options.includeDeleted && t.isDeleted) return false;
+
+    // Type filter
+    if (options.type && options.type !== 'ALL') {
+      if (options.type === 'EXPENSE' && t.type !== 'EXPENSE') return false;
+      if (options.type === 'INCOME' && t.type !== 'INCOME') return false;
+      if (options.type === 'TRANSFER' && t.type !== 'TRANSFER' && t.type !== 'CARD_PAYMENT') return false;
+    }
+
+    // Account / Card filter
+    if (options.accountId && options.accountId !== 'ALL') {
+      const matchesAccount = t.accountId === options.accountId || t.toAccountId === options.accountId || t.creditCardId === options.accountId;
+      if (!matchesAccount) return false;
+    }
+
+    // Category filter
+    if (options.categoryId && options.categoryId !== 'ALL') {
+      if (t.categoryId !== options.categoryId) return false;
+    }
+
+    // Date range filter
+    if (options.dateRange === 'THIS_MONTH') {
+      if (!t.date.startsWith(currentMonthStr)) return false;
+    } else if (options.dateRange === 'LAST_MONTH') {
+      if (!t.date.startsWith(lastMonthStr)) return false;
+    } else if (options.dateRange === 'THIS_YEAR') {
+      if (!t.date.startsWith(currentYearStr)) return false;
+    } else if (options.dateRange === 'THIS_QUARTER') {
+      const currentQuarter = Math.floor(now.getMonth() / 3);
+      const txDate = new Date(t.date);
+      const txQuarter = Math.floor(txDate.getMonth() / 3);
+      if (txDate.getFullYear() !== now.getFullYear() || txQuarter !== currentQuarter) return false;
+    } else if (options.dateRange === 'CUSTOM') {
+      if (options.startDate && t.date < options.startDate) return false;
+      if (options.endDate && t.date > options.endDate) return false;
+    }
+
+    return true;
+  });
+}
+
+/**
+ * Export transactions in standard Cashew-compatible CSV format
+ */
+export function exportCashewTransactionsCsv(
+  transactions: Transaction[],
+  options?: Partial<CashewExportOptions>
+): void {
+  const opts: CashewExportOptions = {
+    format: 'cashew_csv',
+    dateRange: 'ALL',
+    includeNotes: true,
+    includeTags: true,
+    includeSplits: true,
+    includeDeleted: false,
+    ...options,
+  };
+
+  const filtered = filterTransactionsForExport(transactions, opts);
+
+  // Cashew Standard CSV Headers
+  const headers = [
+    'Date',
+    'Time',
+    'Type',
+    'Title / Merchant',
+    'Category',
+    'Subcategory',
+    'Amount (INR)',
+    'Original Amount',
+    'Original Currency',
+    'Account / Source',
+    'Destination Account',
+    'Credit Card',
+    'Payment Channel',
+    'Notes',
+    'Tags',
+    'Splits Breakdown',
+    'Status'
+  ];
+
+  const rows = filtered.map(t => {
+    let splitsStr = '';
+    if (t.splits && t.splits.length > 0) {
+      splitsStr = t.splits.map(s => `${s.categoryName || 'Split'}: ₹${s.amount}${s.notes ? ` (${s.notes})` : ''}`).join(' | ');
+    }
+
+    return [
+      `"${t.date}"`,
+      `"${t.time || '12:00'}"`,
+      `"${t.type}"`,
+      `"${(t.merchantName || t.categoryName || 'Transaction').replace(/"/g, '""')}"`,
+      `"${(t.categoryName || '').replace(/"/g, '""')}"`,
+      `"${(t.subcategory || '').replace(/"/g, '""')}"`,
+      t.amount.toFixed(2),
+      t.originalAmount ? t.originalAmount.toFixed(2) : t.amount.toFixed(2),
+      `"${t.originalCurrency || 'INR'}"`,
+      `"${(t.accountName || 'Cash').replace(/"/g, '""')}"`,
+      `"${(t.toAccountName || '').replace(/"/g, '""')}"`,
+      `"${(t.creditCardName || '').replace(/"/g, '""')}"`,
+      `"${(t.paymentAppName || '').replace(/"/g, '""')}"`,
+      `"${(opts.includeNotes ? t.notes || '' : '').replace(/"/g, '""')}"`,
+      `"${(opts.includeTags && t.tags ? t.tags.join(', ') : '').replace(/"/g, '""')}"`,
+      `"${splitsStr.replace(/"/g, '""')}"`,
+      `"${t.isDeleted ? 'Deleted / Trash' : 'Active'}"`,
+    ].join(',');
+  });
+
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Cashew_Transactions_${new Date().toISOString().substring(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Export templates in CSV format
+ */
+export function exportTemplatesCsv(templates: TransactionTemplate[]): void {
+  const headers = [
+    'Template Name',
+    'Type',
+    'Preset Amount',
+    'Category',
+    'Subcategory',
+    'Merchant / Payee',
+    'Account / Source',
+    'Credit Card',
+    'Destination Account',
+    'Payment App',
+    'Notes',
+    'Tags',
+    'Usage Count',
+    'Is Favorite'
+  ];
+
+  const rows = templates.map(tmpl => [
+    `"${tmpl.name.replace(/"/g, '""')}"`,
+    `"${tmpl.type}"`,
+    tmpl.amount !== undefined ? tmpl.amount.toFixed(2) : '',
+    `"${(tmpl.categoryName || '').replace(/"/g, '""')}"`,
+    `"${(tmpl.subcategory || '').replace(/"/g, '""')}"`,
+    `"${(tmpl.merchantName || '').replace(/"/g, '""')}"`,
+    `"${(tmpl.accountName || '').replace(/"/g, '""')}"`,
+    `"${(tmpl.creditCardName || '').replace(/"/g, '""')}"`,
+    `"${(tmpl.toAccountName || '').replace(/"/g, '""')}"`,
+    `"${(tmpl.paymentAppName || '').replace(/"/g, '""')}"`,
+    `"${(tmpl.notes || '').replace(/"/g, '""')}"`,
+    `"${(tmpl.tags ? tmpl.tags.join(', ') : '').replace(/"/g, '""')}"`,
+    tmpl.usageCount || 0,
+    tmpl.isFavorite ? 'Yes' : 'No',
+  ].join(','));
+
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Transaction_Templates_${new Date().toISOString().substring(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Export templates in JSON format
+ */
+export function exportTemplatesJson(templates: TransactionTemplate[]): void {
+  const data = {
+    version: 1,
+    type: 'transaction_templates',
+    exportedAt: new Date().toISOString(),
+    templates,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Transaction_Templates_${new Date().toISOString().substring(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /**
@@ -285,6 +505,27 @@ export function exportToExcel(state: LocalStorageState, format: 'xlsx' | 'csv' =
     }));
   const wsTx = XLSX.utils.json_to_sheet(txRows);
   XLSX.utils.book_append_sheet(wb, wsTx, 'Transactions');
+
+  // Templates Sheet
+  if (state.templates && state.templates.length > 0) {
+    const tmplRows = state.templates.map(tmpl => ({
+      Name: tmpl.name,
+      Type: tmpl.type,
+      Amount: tmpl.amount || '',
+      Category: tmpl.categoryName || '',
+      Subcategory: tmpl.subcategory || '',
+      Merchant: tmpl.merchantName || '',
+      Account: tmpl.accountName || '',
+      CreditCard: tmpl.creditCardName || '',
+      PaymentApp: tmpl.paymentAppName || '',
+      Notes: tmpl.notes || '',
+      Tags: (tmpl.tags || []).join(', '),
+      UsageCount: tmpl.usageCount || 0,
+      IsFavorite: tmpl.isFavorite ? 'Yes' : 'No',
+    }));
+    const wsTmpl = XLSX.utils.json_to_sheet(tmplRows);
+    XLSX.utils.book_append_sheet(wb, wsTmpl, 'Templates');
+  }
 
   // Accounts Sheet
   const accRows = state.accounts.map(a => ({
@@ -332,3 +573,4 @@ export function exportToExcel(state: LocalStorageState, format: 'xlsx' | 'csv' =
   const filename = `MoneyTracker_Export_${new Date().toISOString().substring(0, 10)}.${format}`;
   XLSX.writeFile(wb, filename);
 }
+

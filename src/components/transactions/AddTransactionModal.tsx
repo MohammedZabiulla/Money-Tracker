@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
-import { TransactionType, Category, Account, CreditCard, PaymentApp, SplitItem, RecurrenceFrequency } from '../../types';
+import { TransactionType, Category, Account, CreditCard, PaymentApp, SplitItem, RecurrenceFrequency, TransactionTemplate } from '../../types';
 import { formatINR, CURRENCY_RATES, convertCurrency, formatForeignCurrency } from '../../lib/currency';
 import { parseBankSMS } from '../../lib/smsParser';
 import { IconHelper, Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
 import { CategoryManagementModal } from '../categories/CategoryManagementModal';
+import { TemplateManagementModal } from '../templates/TemplateManagementModal';
 import { NetworkLogo } from '../common/CardVisual';
 import { learnMerchantSuggestion, detectDuplicateTransaction } from '../../lib/accountingEngine';
 import { calculateNextDueDate } from '../../lib/recurringEngine';
@@ -37,6 +38,10 @@ import {
   ArrowRight,
   RefreshCw,
   Repeat,
+  Zap,
+  Star,
+  BookmarkPlus,
+  CheckCircle2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -59,6 +64,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     merchants,
     transactions,
     goals,
+    templates,
+    saveTransactionAsTemplate,
     addTransaction,
     addRecurring,
   } = useMoney();
@@ -75,6 +82,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [debtPersonName, setDebtPersonName] = useState<string>('');
   const [selectedGoalId, setSelectedGoalId] = useState<string>('');
   const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
+  const [showTemplateModal, setShowTemplateModal] = useState<boolean>(false);
+  const [templateSavedNotice, setTemplateSavedNotice] = useState<string | null>(null);
+  const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
 
   // Cashew Feature: Multi-Currency
   const [selectedCurrency, setSelectedCurrency] = useState<string>('INR');
@@ -331,6 +341,76 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     }
   };
 
+  // Apply a template to the current transaction form
+  const handleApplyTemplate = (tmpl: TransactionTemplate) => {
+    if (tmpl.type) setType(tmpl.type);
+    if (tmpl.amount !== undefined && tmpl.amount > 0) {
+      setCalcInput(String(tmpl.amount));
+    }
+    if (tmpl.categoryId) setSelectedCategoryId(tmpl.categoryId);
+    if (tmpl.subcategory) setSelectedSubcategory(tmpl.subcategory);
+    if (tmpl.merchantName) setMerchantName(tmpl.merchantName);
+    
+    if (tmpl.accountId) {
+      setSelectedAccountId(tmpl.accountId);
+      setSelectedCardId('');
+    } else if (tmpl.creditCardId) {
+      setSelectedCardId(tmpl.creditCardId);
+      setSelectedAccountId('');
+    }
+
+    if (tmpl.toAccountId) setSelectedToAccountId(tmpl.toAccountId);
+    if (tmpl.paymentAppId) setSelectedPaymentAppId(tmpl.paymentAppId);
+    if (tmpl.notes) setNotes(tmpl.notes);
+    if (tmpl.tags && tmpl.tags.length > 0) setTags(tmpl.tags);
+    if (tmpl.splits && tmpl.splits.length > 0) {
+      setIsSplitMode(true);
+      setSplits(tmpl.splits);
+    }
+
+    setAppliedTemplateId(tmpl.id);
+    setTemplateSavedNotice(`Applied template "${tmpl.name}"!`);
+    setTimeout(() => {
+      setTemplateSavedNotice(null);
+      setAppliedTemplateId(null);
+    }, 2500);
+  };
+
+  // Save current input configuration as a reusable template
+  const handleSaveAsTemplate = () => {
+    const pAmt = parseFloat(calcInput) || 0;
+    const cat = categories.find(c => c.id === selectedCategoryId);
+    const acc = accounts.find(a => a.id === selectedAccountId);
+    const card = creditCards.find(c => c.id === selectedCardId);
+    const toAcc = accounts.find(a => a.id === selectedToAccountId);
+    const papp = paymentApps.find(p => p.id === selectedPaymentAppId);
+
+    const tmplTitle = merchantName.trim() || cat?.name || 'Quick Template';
+
+    saveTransactionAsTemplate({
+      amount: pAmt > 0 ? pAmt : undefined,
+      type,
+      categoryId: selectedCategoryId,
+      categoryName: cat?.name,
+      subcategory: selectedSubcategory || undefined,
+      merchantName: merchantName.trim() || undefined,
+      accountId: selectedAccountId || undefined,
+      accountName: acc?.name,
+      creditCardId: selectedCardId || undefined,
+      creditCardName: card?.name,
+      toAccountId: selectedToAccountId || undefined,
+      toAccountName: toAcc?.name,
+      paymentAppId: selectedPaymentAppId || undefined,
+      paymentAppName: papp?.name,
+      notes: notes.trim() || undefined,
+      tags: tags.length > 0 ? tags : undefined,
+      splits: isSplitMode && splits.length > 0 ? splits : undefined,
+    }, tmplTitle);
+
+    setTemplateSavedNotice(`Saved "${tmplTitle}" as template!`);
+    setTimeout(() => setTemplateSavedNotice(null), 3000);
+  };
+
   // Save Transaction
   const handleSave = () => {
     if (parsedAmount <= 0) {
@@ -475,9 +555,61 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           </button>
         </div>
 
+        {/* Quick Templates Bar */}
+        <div className="px-4 py-2 bg-slate-100/60 dark:bg-slate-900/90 border-b border-slate-200/60 dark:border-slate-800/80 flex items-center gap-2 overflow-x-auto no-scrollbar text-xs">
+          <button
+            type="button"
+            onClick={() => setShowTemplateModal(true)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/30 whitespace-nowrap shrink-0 transition-colors"
+          >
+            <Zap className="w-3.5 h-3.5 fill-current" />
+            <span>Templates</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20">{(templates || []).length}</span>
+          </button>
+
+          {(templates || []).slice(0, 6).map(tmpl => {
+            const isSelected = appliedTemplateId === tmpl.id;
+            return (
+              <button
+                key={tmpl.id}
+                type="button"
+                onClick={() => handleApplyTemplate(tmpl)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border whitespace-nowrap shrink-0 font-medium transition-all ${
+                  isSelected
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm scale-105'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-emerald-500 hover:text-emerald-500'
+                }`}
+              >
+                {tmpl.isFavorite && <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />}
+                <span className="truncate max-w-[110px]">{tmpl.name}</span>
+                {tmpl.amount !== undefined && tmpl.amount > 0 && (
+                  <span className="text-[10px] opacity-75 font-semibold">₹{tmpl.amount}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Template Notification Toast */}
+        {templateSavedNotice && (
+          <div className="bg-emerald-500/15 border-b border-emerald-500/30 px-4 py-1.5 flex items-center justify-between text-xs font-semibold text-emerald-600 dark:text-emerald-300 animate-in fade-in">
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+              <span>{templateSavedNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTemplateSavedNotice(null)}
+              className="text-emerald-500 hover:text-emerald-700"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Amount Display & Quick Utilities */}
         <div className="px-6 py-3 bg-slate-50 dark:bg-slate-850 border-b border-slate-100 dark:border-slate-800 space-y-2">
-          {/* Quick Utility Chips (Cashew signatures: Currency, SMS Paste, Split) */}
+          {/* Quick Utility Chips (Cashew signatures: Currency, SMS Paste, Split, Save Template) */}
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-1.5">
               {/* Currency Button */}
@@ -509,6 +641,17 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               >
                 <Split size={12} />
                 <span>Split {isSplitMode ? 'On' : ''}</span>
+              </button>
+
+              {/* Save As Template Button */}
+              <button
+                type="button"
+                onClick={handleSaveAsTemplate}
+                title="Save current transaction details as a quick template"
+                className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center space-x-1 hover:border-amber-500 hover:text-amber-500 shadow-xs transition-all"
+              >
+                <BookmarkPlus size={12} className="text-amber-500" />
+                <span className="hidden sm:inline">Save Template</span>
               </button>
             </div>
 
@@ -1401,6 +1544,13 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       <CategoryManagementModal
         isOpen={showCategoryModal}
         onClose={() => setShowCategoryModal(false)}
+      />
+
+      {/* Template Management Modal */}
+      <TemplateManagementModal
+        isOpen={showTemplateModal}
+        onClose={() => setShowTemplateModal(false)}
+        onSelectTemplate={handleApplyTemplate}
       />
 
       {/* Payment App / Channel Management Modal */}
