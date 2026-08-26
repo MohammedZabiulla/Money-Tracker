@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { CashewExportOptions } from '../../types';
 import { formatINR } from '../../lib/currency';
+import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import {
   exportCashewTransactionsCsv,
   filterTransactionsForExport,
@@ -72,6 +73,51 @@ export const CashewExportModal: React.FC<CashewExportModalProps> = ({ isOpen, on
   const [showPreview, setShowPreview] = useState(false);
   const [copiedSuccess, setCopiedSuccess] = useState(false);
   const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
+
+  const exportAccountOptions: SelectOption[] = useMemo(() => {
+    const opts: SelectOption[] = [{ value: 'ALL', label: 'All Accounts & Cards' }];
+    if (accounts.length > 0) {
+      accounts.forEach((a) => {
+        opts.push({
+          value: a.id,
+          label: a.name,
+          sublabel: a.institution,
+          group: 'Bank Accounts',
+        });
+      });
+    }
+    if (creditCards.length > 0) {
+      creditCards.forEach((c) => {
+        opts.push({
+          value: c.id,
+          label: c.name,
+          sublabel: c.issuer,
+          group: 'Credit Cards',
+        });
+      });
+    }
+    return opts;
+  }, [accounts, creditCards]);
+
+  const exportCategoryOptions: SelectOption[] = useMemo(() => {
+    const opts: SelectOption[] = [{ value: 'ALL', label: 'All Categories' }];
+    categories.forEach((c) => {
+      opts.push({
+        value: c.id,
+        label: c.name,
+      });
+    });
+    return opts;
+  }, [categories]);
+
+  const exportTypeOptions: SelectOption[] = useMemo(() => [
+    { value: 'ALL', label: 'All Transaction Types' },
+    { value: 'EXPENSE', label: 'Expenses Only (-)' },
+    { value: 'INCOME', label: 'Income Only (+)' },
+    { value: 'TRANSFER', label: 'Transfers Only (⇆)' },
+    { value: 'CARD_PAYMENT', label: 'Card Payments' },
+    { value: 'INVESTMENT_CONTRIBUTION', label: 'Investments' },
+  ], []);
 
   // Compute date ranges based on dateRangeMode
   const computedDateRange = useMemo(() => {
@@ -575,55 +621,37 @@ export const CashewExportModal: React.FC<CashewExportModalProps> = ({ isOpen, on
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Account / Card</label>
-                  <select
+                  <CustomSelect
                     value={selectedAccountId}
-                    onChange={(e) => setSelectedAccountId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="ALL">All Accounts & Cards</option>
-                    <optgroup label="Bank Accounts">
-                      {accounts.map(a => (
-                        <option key={a.id} value={a.id}>{a.name}</option>
-                      ))}
-                    </optgroup>
-                    {creditCards.length > 0 && (
-                      <optgroup label="Credit Cards">
-                        {creditCards.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
+                    onChange={(val) => setSelectedAccountId(val)}
+                    options={exportAccountOptions}
+                    placeholder="All Accounts & Cards"
+                    searchPlaceholder="Search account or card..."
+                    className="w-full"
+                  />
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Category</label>
-                  <select
+                  <CustomSelect
                     value={selectedCategoryId}
-                    onChange={(e) => setSelectedCategoryId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="ALL">All Categories</option>
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setSelectedCategoryId(val)}
+                    options={exportCategoryOptions}
+                    placeholder="All Categories"
+                    searchPlaceholder="Search categories..."
+                    className="w-full"
+                  />
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">Transaction Type</label>
-                  <select
+                  <CustomSelect
                     value={selectedType}
-                    onChange={(e) => setSelectedType(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="ALL">All Transaction Types</option>
-                    <option value="EXPENSE">Expenses Only (-)</option>
-                    <option value="INCOME">Income Only (+)</option>
-                    <option value="TRANSFER">Transfers Only (⇆)</option>
-                    <option value="CARD_PAYMENT">Card Payments</option>
-                    <option value="INVESTMENT_CONTRIBUTION">Investments</option>
-                  </select>
+                    onChange={(val) => setSelectedType(val)}
+                    options={exportTypeOptions}
+                    placeholder="All Transaction Types"
+                    className="w-full"
+                  />
                 </div>
               </div>
 

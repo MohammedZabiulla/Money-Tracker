@@ -530,6 +530,59 @@ export interface CurrencyRate {
   flag: string;
 }
 
+export type ActivityDomain =
+  | 'TRANSACTION'
+  | 'SETTINGS'
+  | 'ACCOUNT'
+  | 'CREDIT_CARD'
+  | 'CATEGORY'
+  | 'PAYMENT_APP'
+  | 'BUDGET'
+  | 'SUBSCRIPTION'
+  | 'RECURRING'
+  | 'GOAL'
+  | 'LOAN'
+  | 'INVESTMENT'
+  | 'DEBT'
+  | 'TEMPLATE'
+  | 'RECONCILIATION'
+  | 'SYSTEM';
+
+export type ActivityActionType =
+  | 'CREATE'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'RESTORE'
+  | 'PURGE'
+  | 'CONVERT'
+  | 'RECONCILE'
+  | 'IMPORT'
+  | 'EXPORT'
+  | 'RESET'
+  | 'SETTLE'
+  | 'ALLOCATE';
+
+export interface ActivityChangeDetail {
+  field: string;
+  label: string;
+  oldValue?: any;
+  newValue?: any;
+}
+
+export interface ActivityLog {
+  id: string;
+  timestamp: number;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm
+  domain: ActivityDomain;
+  action: ActivityActionType;
+  entityId?: string;
+  entityName?: string;
+  summary: string;
+  details?: ActivityChangeDetail[];
+  metadata?: Record<string, any>;
+}
+
 export interface AppBackupData {
   version: number;
   exportedAt: string;
@@ -549,6 +602,7 @@ export interface AppBackupData {
   debts: DebtRecord[];
   reconciliations: AccountReconciliation[];
   settings: AppSettings;
+  activityLogs?: ActivityLog[];
 }
 
 export interface CashewExportOptions {

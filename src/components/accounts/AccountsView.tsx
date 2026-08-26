@@ -21,6 +21,7 @@ import {
 import { CardVisual, CardChipBadge, NetworkLogo, EMVChip } from '../common/CardVisual';
 import { BankVisual } from '../common/BankVisual';
 import { ConvertBankModal } from './ConvertBankModal';
+import { AccountTransactionsModal } from './AccountTransactionsModal';
 import { IconHelper, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import {
@@ -49,8 +50,21 @@ import {
   ChevronRight,
   Filter,
 } from 'lucide-react';
+import { Transaction, TransactionType } from '../../types';
 
-export const AccountsView: React.FC = () => {
+interface AccountsViewProps {
+  onSelectAccountTransactions?: (item: { type: 'ACCOUNT' | 'CARD'; id: string; name: string }) => void;
+  onSelectTransaction?: (tx: Transaction) => void;
+  onOpenAdd?: (type?: TransactionType, accountId?: string) => void;
+  onNavigateToFullFeed?: (accountId: string) => void;
+}
+
+export const AccountsView: React.FC<AccountsViewProps> = ({
+  onSelectAccountTransactions,
+  onSelectTransaction,
+  onOpenAdd,
+  onNavigateToFullFeed,
+}) => {
   const {
     accounts,
     creditCards,
@@ -67,6 +81,26 @@ export const AccountsView: React.FC = () => {
 
   // Active View Filter Tab
   const [activeTab, setActiveTab] = useState<'ALL' | 'BANKS' | 'CARDS' | 'WALLETS'>('ALL');
+
+  // Transactions Statement Modal for Account / Card
+  const [selectedAccountForTxModal, setSelectedAccountForTxModal] = useState<Account | null>(null);
+  const [selectedCardForTxModal, setSelectedCardForTxModal] = useState<CreditCard | null>(null);
+
+  const handleViewAccountTransactions = (acc: Account) => {
+    if (onSelectAccountTransactions) {
+      onSelectAccountTransactions({ type: 'ACCOUNT', id: acc.id, name: acc.name });
+    }
+    setSelectedAccountForTxModal(acc);
+    setSelectedCardForTxModal(null);
+  };
+
+  const handleViewCardTransactions = (card: CreditCard) => {
+    if (onSelectAccountTransactions) {
+      onSelectAccountTransactions({ type: 'CARD', id: card.id, name: card.name });
+    }
+    setSelectedCardForTxModal(card);
+    setSelectedAccountForTxModal(null);
+  };
 
   // Modals state
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
@@ -677,6 +711,7 @@ export const AccountsView: React.FC = () => {
                 <CardVisual
                   key={card.id}
                   card={card}
+                  onViewTransactions={() => handleViewCardTransactions(card)}
                   onEdit={() => openEditCard(card)}
                   onDelete={() => setItemToDelete({ type: 'CARD', id: card.id, name: card.name })}
                   onPayBill={() => {
@@ -796,6 +831,7 @@ export const AccountsView: React.FC = () => {
                 <BankVisual
                   key={acc.id}
                   account={acc}
+                  onViewTransactions={() => handleViewAccountTransactions(acc)}
                   onEdit={() => openEditAccount(acc)}
                   onConvert={() => {
                     setAccountToConvert(acc);
@@ -897,6 +933,7 @@ export const AccountsView: React.FC = () => {
                 <BankVisual
                   key={acc.id}
                   account={acc}
+                  onViewTransactions={() => handleViewAccountTransactions(acc)}
                   onEdit={() => openEditAccount(acc)}
                   onConvert={() => {
                     setAccountToConvert(acc);
@@ -1758,7 +1795,7 @@ export const AccountsView: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-base text-slate-900 dark:text-white">Indian Bank Credit Cards Catalog</h3>
-                  <p className="text-[11px] text-slate-500">Explore 25+ curated cards across top Indian banks with cashback & lounge perks</p>
+                  <p className="text-[11px] text-slate-500">Explore 60+ curated cards across top Indian banks with cashback & lounge perks</p>
                 </div>
               </div>
               <button
@@ -1811,7 +1848,7 @@ export const AccountsView: React.FC = () => {
 
               {/* Category Filter Chips */}
               <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
-                {['ALL', 'Super Premium', 'Travel & Lounge', 'Cashback', 'RuPay UPI', 'Dining & Shopping', 'Fuel'].map(cat => (
+                {['ALL', 'Super Premium', 'Travel & Lounge', 'Cashback', 'RuPay UPI', 'Rewards & Dining', 'Shopping', 'Fuel'].map(cat => (
                   <button
                     key={cat}
                     onClick={() => setCatalogCategoryFilter(cat)}
@@ -2384,6 +2421,22 @@ export const AccountsView: React.FC = () => {
           setAccountToConvert(null);
         }}
         targetAccount={accountToConvert}
+      />
+
+      {/* ========================================================================= */}
+      {/* ACCOUNT / CARD DRILL-DOWN TRANSACTIONS MODAL */}
+      {/* ========================================================================= */}
+      <AccountTransactionsModal
+        isOpen={Boolean(selectedAccountForTxModal || selectedCardForTxModal)}
+        onClose={() => {
+          setSelectedAccountForTxModal(null);
+          setSelectedCardForTxModal(null);
+        }}
+        account={selectedAccountForTxModal}
+        card={selectedCardForTxModal}
+        onSelectTransaction={onSelectTransaction}
+        onOpenAdd={onOpenAdd}
+        onNavigateToFullFeed={onNavigateToFullFeed}
       />
     </div>
   );

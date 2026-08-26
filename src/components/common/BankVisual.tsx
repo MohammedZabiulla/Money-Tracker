@@ -18,6 +18,8 @@ import {
   ArrowUpRight,
   TrendingUp,
   CheckCircle2,
+  Receipt,
+  History,
 } from 'lucide-react';
 
 interface BankVisualProps {
@@ -26,6 +28,7 @@ interface BankVisualProps {
   onDelete?: () => void;
   onReconcile?: () => void;
   onConvert?: () => void;
+  onViewTransactions?: () => void;
   showActions?: boolean;
 }
 
@@ -35,6 +38,7 @@ export const BankVisual: React.FC<BankVisualProps> = ({
   onDelete,
   onReconcile,
   onConvert,
+  onViewTransactions,
   showActions = true,
 }) => {
   const bankConfig = INDIAN_BANKS.find(
@@ -119,7 +123,12 @@ export const BankVisual: React.FC<BankVisualProps> = ({
   // --------------------------------------------------------------------------
   if (isWallet || isCash) {
     return (
-      <div className="relative overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md transition-all group">
+      <div
+        onClick={onViewTransactions}
+        className={`relative overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md transition-all group ${
+          onViewTransactions ? 'cursor-pointer hover:border-emerald-500/40 dark:hover:border-emerald-500/40' : ''
+        }`}
+      >
         <div
           className="h-1.5 w-full"
           style={{ backgroundColor: brandColor }}
@@ -128,7 +137,7 @@ export const BankVisual: React.FC<BankVisualProps> = ({
           <div className="flex items-start justify-between">
             <div className="flex items-center space-x-3">
               <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md shadow-amber-500/10"
+                className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md shadow-amber-500/10 transition-transform group-hover:scale-105"
                 style={{ backgroundColor: brandColor }}
               >
                 {isCash ? <Banknote size={24} /> : <Wallet size={24} />}
@@ -181,8 +190,21 @@ export const BankVisual: React.FC<BankVisualProps> = ({
 
         {/* Action Controls */}
         {showActions && (
-          <div className="px-5 py-3 bg-slate-50/70 dark:bg-slate-850 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2">
+          <div
+            onClick={e => e.stopPropagation()}
+            className="px-5 py-3 bg-slate-50/70 dark:bg-slate-850 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2"
+          >
             <div className="flex items-center space-x-2">
+              {onViewTransactions && (
+                <button
+                  onClick={onViewTransactions}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center space-x-1.5 border border-emerald-200 dark:border-emerald-800 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                  title="View transactions related to this wallet/account"
+                >
+                  <Receipt size={12} />
+                  <span>Transactions</span>
+                </button>
+              )}
               {onEdit && (
                 <button
                   onClick={onEdit}
@@ -222,7 +244,12 @@ export const BankVisual: React.FC<BankVisualProps> = ({
   // AUTHENTIC BANK ACCOUNT & TERM DEPOSIT PASSBOOK / VAULT VIEW
   // --------------------------------------------------------------------------
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-md hover:shadow-lg transition-all duration-200 group">
+    <div
+      onClick={onViewTransactions}
+      className={`relative overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-md hover:shadow-lg transition-all duration-200 group ${
+        onViewTransactions ? 'cursor-pointer hover:border-emerald-500/50 dark:hover:border-emerald-500/50' : ''
+      }`}
+    >
       {/* Top Bank Identity Branding Band */}
       <div
         className="px-5 py-3 text-white flex items-center justify-between relative overflow-hidden"
@@ -243,7 +270,7 @@ export const BankVisual: React.FC<BankVisualProps> = ({
             size="md"
             glow={true}
             interactive={false}
-            className="shrink-0 shadow-sm"
+            className="shrink-0 shadow-sm transition-transform group-hover:scale-105"
           />
 
           <div>
@@ -330,8 +357,21 @@ export const BankVisual: React.FC<BankVisualProps> = ({
 
       {/* Action Footer Bar */}
       {showActions && (
-        <div className="px-5 py-3 bg-slate-50/70 dark:bg-slate-850/70 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2">
+        <div
+          onClick={e => e.stopPropagation()}
+          className="px-5 py-3 bg-slate-50/70 dark:bg-slate-850/70 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2"
+        >
           <div className="flex items-center space-x-2">
+            {onViewTransactions && (
+              <button
+                onClick={onViewTransactions}
+                className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center space-x-1.5 border border-emerald-200 dark:border-emerald-800 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                title="View passbook transactions related to this bank account"
+              >
+                <Receipt size={12} />
+                <span>Transactions</span>
+              </button>
+            )}
             {onEdit && (
               <button
                 onClick={onEdit}

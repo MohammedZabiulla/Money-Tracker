@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useMoney } from '../../context/MoneyContext';
-import { formatINR, formatCompactINR } from '../../lib/currency';
+import { formatINR, formatCompactINR, format12HourTime } from '../../lib/currency';
 import { IconHelper, Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
-import { Transaction, TransactionType } from '../../types';
+import { Transaction, TransactionType, Account, CreditCard } from '../../types';
 import { calculateMonthlyCommitment, formatDueBadge } from '../../lib/recurringEngine';
 import { RecurringManagementModal } from '../recurring/RecurringManagementModal';
+import { AccountTransactionsModal } from '../accounts/AccountTransactionsModal';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -30,6 +31,10 @@ import {
   Zap,
   Activity,
   Smartphone,
+  Landmark,
+  Wallet,
+  Receipt,
+  Plus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
@@ -41,9 +46,10 @@ import { PaymentChannelChart } from '../insights/charts/PaymentChannelChart';
 
 interface HomeDashboardProps {
   initialSubtab?: 'overview' | 'insights';
-  onOpenAdd: (initialType?: TransactionType) => void;
+  onOpenAdd: (initialType?: TransactionType, accountId?: string) => void;
   onSelectTransaction: (tx: Transaction) => void;
   onViewAllTransactions: () => void;
+  onNavigateToAccountTransactions?: (accountId: string) => void;
   onNavigateTab: (tab: string) => void;
 }
 
@@ -52,6 +58,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onOpenAdd,
   onSelectTransaction,
   onViewAllTransactions,
+  onNavigateToAccountTransactions,
   onNavigateTab,
 }) => {
   const {
@@ -74,6 +81,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [showBalance, setShowBalance] = useState(true);
   const [balanceMode, setBalanceMode] = useState<'available' | 'netWorth'>('available');
   const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [statementAccount, setStatementAccount] = useState<Account | null>(null);
+  const [statementCard, setStatementCard] = useState<CreditCard | null>(null);
 
   useEffect(() => {
     if (initialSubtab) {
@@ -292,6 +301,149 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   </span>
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Accounts & Credit Cards Quick Carousel / Tap to View Transactions */}
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-4 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="w-7 h-7 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                  <Landmark size={15} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    My Accounts & Cards
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Tap any card or bank to view its transactions & statement
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => onNavigateTab('accounts')}
+                className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center space-x-1"
+              >
+                <span>Manage ({accounts.filter(a => !a.isDeleted).length + creditCards.filter(c => !c.isDeleted).length})</span>
+                <ChevronRight size={14} />
+              </button>
+            </div>
+
+            {/* Horizontal Scrollable Account Cards */}
+            <div className="flex space-x-3 overflow-x-auto pb-2 pt-1 no-scrollbar -mx-1 px-1">
+              {/* Bank Accounts & Wallets */}
+              {accounts
+                .filter(a => !a.isDeleted)
+                .map(acc => {
+                  const isPositive = acc.calculatedBalance >= 0;
+                  return (
+                    <div
+                      key={acc.id}
+                      onClick={() => {
+                        setStatementAccount(acc);
+                        setStatementCard(null);
+                      }}
+                      className="shrink-0 w-52 p-3.5 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100/90 dark:from-slate-850 dark:to-slate-800 border border-slate-200/80 dark:border-slate-700 hover:border-emerald-500/60 dark:hover:border-emerald-500/60 shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer active:scale-98 group flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-xs">
+                            <Bank3DIcon
+                              institution={acc.institution}
+                              type={acc.type}
+                              color={acc.color || '#004c8f'}
+                              size="md"
+                              glow={true}
+                            />
+                          </div>
+                          <span className="text-[9px] uppercase font-extrabold px-1.5 py-0.5 rounded-md bg-white dark:bg-slate-750 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            {acc.type === 'CASH' ? 'CASH' : acc.type === 'WALLET' ? 'WALLET' : acc.type === 'FIXED_DEPOSIT' ? 'FD' : 'BANK'}
+                          </span>
+                        </div>
+
+                        <div className="mt-2.5 min-w-0">
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                            {acc.name}
+                          </h4>
+                          <p className="text-[10px] text-slate-400 truncate">
+                            {acc.institution} {acc.accountNumberLast4 ? `••${acc.accountNumberLast4}` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-750 flex items-center justify-between">
+                        <div>
+                          <span className="text-[9px] font-semibold text-slate-400 block uppercase">Balance</span>
+                          <span className={`text-xs sm:text-sm font-extrabold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                            {formatINR(acc.calculatedBalance)}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center space-x-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-1 rounded-lg">
+                          <Receipt size={11} />
+                          <span>Txns</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {/* Credit Cards */}
+              {creditCards
+                .filter(c => !c.isDeleted)
+                .map(card => {
+                  return (
+                    <div
+                      key={card.id}
+                      onClick={() => {
+                        setStatementCard(card);
+                        setStatementAccount(null);
+                      }}
+                      className="shrink-0 w-52 p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white border border-indigo-900/60 hover:border-indigo-500 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer active:scale-98 group flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center">
+                            <Bank3DIcon
+                              institution={card.issuer}
+                              type="CREDIT_CARD"
+                              color={card.color || '#9333ea'}
+                              size="md"
+                              glow={true}
+                            />
+                          </div>
+                          <span className="text-[9px] uppercase font-extrabold px-1.5 py-0.5 rounded-md bg-white/15 text-white border border-white/20">
+                            {card.network || 'CARD'}
+                          </span>
+                        </div>
+
+                        <div className="mt-2.5 min-w-0">
+                          <h4 className="text-xs font-bold text-white truncate group-hover:text-amber-300 transition-colors">
+                            {card.name}
+                          </h4>
+                          <p className="text-[10px] text-slate-300 truncate">
+                            {card.issuer} ••{card.lastFourDigits}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between">
+                        <div>
+                          <span className="text-[9px] font-semibold text-slate-300 block uppercase">Due</span>
+                          <span className="text-xs sm:text-sm font-extrabold text-amber-300">
+                            {formatINR(card.currentOutstanding)}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center space-x-1 text-[10px] font-bold text-purple-200 bg-white/20 px-2 py-1 rounded-lg">
+                          <Receipt size={11} />
+                          <span>Txns</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </div>
 
@@ -590,11 +742,35 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                                 <span>{t.paymentAppName}</span>
                               </span>
                             )}
-                            {/* Mini 3D Bank or Card Badge */}
+                            {/* Mini 3D Bank or Card Badge - Clickable to open statement */}
                             {(t.accountName || t.creditCardName) && (
-                              <span
-                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold"
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (card) {
+                                    setStatementCard(card);
+                                    setStatementAccount(null);
+                                  } else if (acc) {
+                                    setStatementAccount(acc);
+                                    setStatementCard(null);
+                                  } else if (t.creditCardId) {
+                                    const found = creditCards.find(c => c.id === t.creditCardId);
+                                    if (found) {
+                                      setStatementCard(found);
+                                      setStatementAccount(null);
+                                    }
+                                  } else if (t.accountId) {
+                                    const found = accounts.find(a => a.id === t.accountId);
+                                    if (found) {
+                                      setStatementAccount(found);
+                                      setStatementCard(null);
+                                    }
+                                  }
+                                }}
+                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold transition-colors cursor-pointer"
                                 style={{ color: accentColor }}
+                                title={`View transactions for ${t.creditCardName || t.accountName}`}
                               >
                                 <Bank3DIcon
                                   institution={card ? card.issuer : acc?.institution}
@@ -604,9 +780,17 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                                   glow={false}
                                 />
                                 <span>{t.creditCardName ? t.creditCardName : t.accountName}</span>
-                              </span>
+                              </button>
                             )}
                           </div>
+
+                          {/* Notes inside the transaction card */}
+                          {t.notes && (
+                            <div className="flex items-center space-x-1.5 text-[11px] text-amber-900 dark:text-amber-200/90 italic mt-1 px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 max-w-[200px] sm:max-w-xs w-fit">
+                              <span className="text-amber-500 font-bold shrink-0 text-xs">📝</span>
+                              <span className="truncate">{t.notes}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -622,7 +806,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         >
                           {isIncome ? `+${formatINR(t.amount)}` : isTransfer ? formatINR(t.amount) : `-${formatINR(t.amount)}`}
                         </span>
-                        <span className="text-[10px] text-slate-400 font-medium">{t.time || t.date}</span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {format12HourTime(t.time, t.timestamp)}
+                        </span>
                       </div>
                     </div>
                   );
@@ -1002,6 +1188,28 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       <RecurringManagementModal
         isOpen={showRecurringModal}
         onClose={() => setShowRecurringModal(false)}
+      />
+
+      {/* Account / Credit Card Statement Modal */}
+      <AccountTransactionsModal
+        isOpen={Boolean(statementAccount || statementCard)}
+        onClose={() => {
+          setStatementAccount(null);
+          setStatementCard(null);
+        }}
+        account={statementAccount || undefined}
+        card={statementCard || undefined}
+        onSelectTransaction={onSelectTransaction}
+        onOpenAddTransaction={(accountId) => {
+          onOpenAdd('EXPENSE', accountId);
+        }}
+        onNavigateToFullFeed={(accountId) => {
+          if (onNavigateToAccountTransactions) {
+            onNavigateToAccountTransactions(accountId);
+          } else {
+            onViewAllTransactions();
+          }
+        }}
       />
     </div>
   );

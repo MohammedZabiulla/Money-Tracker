@@ -39,6 +39,7 @@ const STORAGE_KEYS = {
   DEBTS: 'mt_debts_v1',
   RECONCILIATIONS: 'mt_reconciliations_v1',
   SETTINGS: 'mt_settings_v1',
+  ACTIVITY_LOGS: 'mt_activity_logs_v1',
   INITIALIZED: 'mt_initialized_v1',
 };
 
@@ -59,6 +60,7 @@ export interface LocalStorageState {
   debts: DebtRecord[];
   reconciliations: AccountReconciliation[];
   settings: AppSettings;
+  activityLogs?: import('../types').ActivityLog[];
 }
 
 /**
@@ -135,6 +137,7 @@ export function loadInitialState(): LocalStorageState {
     const debts = parseJson<DebtRecord[]>(localStorage.getItem(STORAGE_KEYS.DEBTS), []);
     const reconciliations = parseJson<AccountReconciliation[]>(localStorage.getItem(STORAGE_KEYS.RECONCILIATIONS), []);
     const settings = parseJson<AppSettings>(localStorage.getItem(STORAGE_KEYS.SETTINGS), DEFAULT_APP_SETTINGS);
+    const activityLogs = parseJson<import('../types').ActivityLog[]>(localStorage.getItem(STORAGE_KEYS.ACTIVITY_LOGS), []);
 
     return {
       accounts,
@@ -153,6 +156,7 @@ export function loadInitialState(): LocalStorageState {
       debts,
       reconciliations,
       settings,
+      activityLogs,
     };
   } catch (err) {
     console.error('Failed to load state from localStorage', err);
@@ -173,6 +177,7 @@ export function loadInitialState(): LocalStorageState {
       debts: [],
       reconciliations: [],
       settings: DEFAULT_APP_SETTINGS,
+      activityLogs: [],
     };
   }
 }
@@ -204,6 +209,7 @@ export function saveFullState(state: LocalStorageState): void {
     localStorage.setItem(STORAGE_KEYS.DEBTS, JSON.stringify(state.debts));
     localStorage.setItem(STORAGE_KEYS.RECONCILIATIONS, JSON.stringify(state.reconciliations));
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(state.settings));
+    localStorage.setItem(STORAGE_KEYS.ACTIVITY_LOGS, JSON.stringify(state.activityLogs || []));
   } catch (e) {
     console.error('Error writing to local storage', e);
   }
@@ -573,4 +579,73 @@ export function exportToExcel(state: LocalStorageState, format: 'xlsx' | 'csv' =
   const filename = `MoneyTracker_Export_${new Date().toISOString().substring(0, 10)}.${format}`;
   XLSX.writeFile(wb, filename);
 }
+
+/**
+ * Export audit activity change logs in standard CSV format
+ */
+export function exportActivityLogsCsv(logs: import('../types').ActivityLog[]): void {
+  const headers = [
+    'Log ID',
+    'Date',
+    'Time',
+    'Domain',
+    'Action Type',
+    'Entity ID',
+    'Entity Name',
+    'Summary',
+    'Field Changes'
+  ];
+
+  const rows = logs.map(log => {
+    const diffsSummary = (log.details || [])
+      .map(d => `${d.label || d.field}: [${d.oldValue !== undefined ? JSON.stringify(d.oldValue) : 'none'}] ➔ [${d.newValue !== undefined ? JSON.stringify(d.newValue) : 'none'}]`)
+      .join('; ');
+
+    return [
+      `"${log.id}"`,
+      `"${log.date}"`,
+      `"${log.time}"`,
+      `"${log.domain}"`,
+      `"${log.action}"`,
+      `"${(log.entityId || '').replace(/"/g, '""')}"`,
+      `"${(log.entityName || '').replace(/"/g, '""')}"`,
+      `"${(log.summary || '').replace(/"/g, '""')}"`,
+      `"${diffsSummary.replace(/"/g, '""')}"`,
+    ].join(',');
+  });
+
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Cashew_Activity_Audit_Log_${new Date().toISOString().substring(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Export audit activity change logs in JSON format
+ */
+export function exportActivityLogsJson(logs: import('../types').ActivityLog[]): void {
+  const data = {
+    version: 1,
+    type: 'cashew_activity_audit_logs',
+    totalEntries: logs.length,
+    exportedAt: new Date().toISOString(),
+    logs,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Cashew_Activity_Audit_Log_${new Date().toISOString().substring(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 

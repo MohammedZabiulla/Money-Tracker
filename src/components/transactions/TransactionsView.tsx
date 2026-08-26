@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Transaction, TransactionType } from '../../types';
-import { formatINR } from '../../lib/currency';
+import { formatINR, format12HourTime } from '../../lib/currency';
 import { IconHelper, Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { CustomDatePicker } from '../common/CustomDatePicker';
@@ -25,6 +25,7 @@ import {
   Building,
   MessageSquareCode,
   Database,
+  Layers,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { SMSImportModal } from './SMSImportModal';
@@ -33,20 +34,28 @@ import { CashewImportModal } from '../more/CashewImportModal';
 interface TransactionsViewProps {
   onSelectTransaction: (tx: Transaction) => void;
   onOpenAdd: () => void;
+  initialAccountId?: string;
 }
 
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
   onSelectTransaction,
   onOpenAdd,
+  initialAccountId,
 }) => {
   const { transactions, categories, accounts, creditCards, paymentApps, activeMonth, setActiveMonth } = useMoney();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('ALL');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
   const [selectedTag, setSelectedTag] = useState<string>('ALL');
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>(initialAccountId || 'ALL');
   const [showSMSModal, setShowSMSModal] = useState<boolean>(false);
   const [showCashewModal, setShowCashewModal] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (initialAccountId) {
+      setSelectedAccountId(initialAccountId);
+    }
+  }, [initialAccountId]);
   
   // Day filter state: 'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM'
   const [dayFilter, setDayFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM'>('ALL');
@@ -246,7 +255,21 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
       // Account Filter
       if (selectedAccountId !== 'ALL') {
-        if (t.accountId !== selectedAccountId && t.creditCardId !== selectedAccountId && t.toAccountId !== selectedAccountId) {
+        const targetAcc = accounts.find(a => a.id === selectedAccountId);
+        const targetCard = creditCards.find(c => c.id === selectedAccountId);
+
+        const matchesAccId = t.accountId === selectedAccountId || t.toAccountId === selectedAccountId || t.creditCardId === selectedAccountId;
+        const matchesAccName = targetAcc && (
+          t.accountName?.toLowerCase() === targetAcc.name.toLowerCase() ||
+          t.toAccountName?.toLowerCase() === targetAcc.name.toLowerCase() ||
+          t.accountName?.toLowerCase() === targetAcc.institution.toLowerCase()
+        );
+        const matchesCardName = targetCard && (
+          t.creditCardName?.toLowerCase() === targetCard.name.toLowerCase() ||
+          t.creditCardName?.toLowerCase() === targetCard.issuer.toLowerCase()
+        );
+
+        if (!matchesAccId && !matchesAccName && !matchesCardName) {
           return false;
         }
       }
@@ -530,6 +553,36 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         </div>
       </div>
 
+      {/* Active Account Filter Banner */}
+      {selectedAccountId !== 'ALL' && (() => {
+        const activeAcc = accounts.find(a => a.id === selectedAccountId);
+        const activeCard = creditCards.find(c => c.id === selectedAccountId);
+        const title = activeAcc ? activeAcc.name : activeCard ? activeCard.name : 'Account';
+        const sub = activeAcc ? activeAcc.institution : activeCard ? activeCard.issuer : '';
+
+        return (
+          <div className="p-2.5 px-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between shadow-2xs animate-in fade-in">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                <Building size={13} />
+              </div>
+              <div className="text-xs">
+                <span className="text-slate-500 dark:text-slate-400">Filtering transactions for </span>
+                <span className="font-bold text-emerald-950 dark:text-emerald-200">{title}</span>
+                {sub && <span className="text-emerald-700 dark:text-emerald-400 text-[11px] ml-1">({sub})</span>}
+              </div>
+            </div>
+            <button
+              onClick={() => setSelectedAccountId('ALL')}
+              className="text-[11px] font-bold px-2.5 py-1 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-all flex items-center space-x-1"
+            >
+              <X size={12} />
+              <span>Show All</span>
+            </button>
+          </div>
+        );
+      })()}
+
       {/* Summary KPI Strip for Current Filtered Day/Period */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
         <div className="p-3 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 shadow-xs flex items-center justify-between">
@@ -773,17 +826,33 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
                             {/* Mini 3D Payment Channel Badge */}
                             {t.paymentAppName && (
-                              <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold text-slate-700 dark:text-slate-200">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSearchQuery(t.paymentAppName || '');
+                                }}
+                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                                title={`Filter by ${t.paymentAppName}`}
+                              >
                                 <PaymentApp3DIcon name={t.paymentAppName} size="xs" glow={false} />
                                 <span>{t.paymentAppName}</span>
-                              </span>
+                              </button>
                             )}
 
                             {/* Mini 3D Bank / Card Badge */}
                             {(t.accountName || t.creditCardName) && (
-                              <span
-                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold"
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const accId = t.accountId || (acc ? acc.id : '');
+                                  const cardId = t.creditCardId || (card ? card.id : '');
+                                  setSelectedAccountId(cardId || accId || 'ALL');
+                                }}
+                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold transition-colors cursor-pointer"
                                 style={{ color: accentColor }}
+                                title={`Filter transactions for ${t.creditCardName || t.accountName}`}
                               >
                                 <Bank3DIcon
                                   institution={card ? card.issuer : acc?.institution}
@@ -797,7 +866,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                                     ? `${t.accountName} ➔ ${t.toAccountName}`
                                     : t.creditCardName || t.accountName}
                                 </span>
-                              </span>
+                              </button>
                             )}
 
                             {/* Tags */}
@@ -810,6 +879,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                               </span>
                             ))}
                           </div>
+
+                          {/* Notes inside the transaction card */}
+                          {t.notes && (
+                            <div className="flex items-center space-x-1.5 text-[11px] text-amber-900 dark:text-amber-200/90 italic mt-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 max-w-sm sm:max-w-md w-fit">
+                              <span className="text-amber-500 font-bold shrink-0 text-xs">📝</span>
+                              <span className="truncate">{t.notes}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -827,7 +904,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           {isIncome ? `+${formatINR(t.amount)}` : isTransfer ? formatINR(t.amount) : `-${formatINR(t.amount)}`}
                         </span>
                         <span className="text-[10px] text-slate-400 font-medium">
-                          {t.time || '12:00'}
+                          {format12HourTime(t.time, t.timestamp)}
                         </span>
                       </div>
                     </div>

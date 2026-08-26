@@ -9,6 +9,7 @@ import {
 } from 'firebase/auth';
 import {
   getFirestore,
+  initializeFirestore,
   doc,
   getDoc,
   getDocFromServer,
@@ -22,7 +23,26 @@ import { LocalStorageState } from './storage';
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 // CRITICAL: Get Firestore with the designated database ID
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+function initFirestore() {
+  try {
+    if (firebaseConfig.firestoreDatabaseId) {
+      return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    }
+    return getFirestore(app);
+  } catch (err) {
+    console.warn('Initial getFirestore with databaseId failed, using fallback:', err);
+    try {
+      if (firebaseConfig.firestoreDatabaseId) {
+        return initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId);
+      }
+      return initializeFirestore(app, {});
+    } catch {
+      return getFirestore(app);
+    }
+  }
+}
+
+export const db = initFirestore();
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

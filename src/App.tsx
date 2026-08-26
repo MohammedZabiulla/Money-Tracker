@@ -19,9 +19,11 @@ import { RotateCcw, X } from 'lucide-react';
 function MainApp() {
   const { isLocked, undoToast, dismissUndoToast, settings } = useMoney();
   const [currentTab, setCurrentTab] = useState<'home' | 'insights' | 'accounts' | 'more' | 'transactions'>('home');
+  const [filterAccountId, setFilterAccountId] = useState<string>('ALL');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [initialAddType, setInitialAddType] = useState<TransactionType>('EXPENSE');
+  const [initialAccountIdForAdd, setInitialAccountIdForAdd] = useState<string | undefined>(undefined);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
@@ -38,16 +40,25 @@ function MainApp() {
     return <LockScreen />;
   }
 
-  const handleOpenAdd = (type: TransactionType = 'EXPENSE') => {
+  const handleOpenAdd = (type: TransactionType = 'EXPENSE', accountId?: string) => {
     setInitialAddType(type);
+    setInitialAccountIdForAdd(accountId);
     setShowAddModal(true);
+  };
+
+  const handleNavigateToAccountTransactions = (accountId: string) => {
+    setFilterAccountId(accountId);
+    setCurrentTab('transactions');
   };
 
   return (
     <div className="min-h-screen bg-slate-100/60 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
       <TopBar
         currentTab={currentTab}
-        onOpenSearch={() => setCurrentTab('transactions')}
+        onOpenSearch={() => {
+          setFilterAccountId('ALL');
+          setCurrentTab('transactions');
+        }}
         onOpenTrash={() => setShowTrashModal(true)}
       />
 
@@ -56,7 +67,11 @@ function MainApp() {
           <HomeDashboard
             onOpenAdd={handleOpenAdd}
             onSelectTransaction={setSelectedTransaction}
-            onViewAllTransactions={() => setCurrentTab('transactions')}
+            onViewAllTransactions={() => {
+              setFilterAccountId('ALL');
+              setCurrentTab('transactions');
+            }}
+            onNavigateToAccountTransactions={handleNavigateToAccountTransactions}
             onNavigateTab={tab => setCurrentTab(tab as any)}
           />
         )}
@@ -66,34 +81,55 @@ function MainApp() {
             initialSubtab="insights"
             onOpenAdd={handleOpenAdd}
             onSelectTransaction={setSelectedTransaction}
-            onViewAllTransactions={() => setCurrentTab('transactions')}
+            onViewAllTransactions={() => {
+              setFilterAccountId('ALL');
+              setCurrentTab('transactions');
+            }}
+            onNavigateToAccountTransactions={handleNavigateToAccountTransactions}
             onNavigateTab={tab => setCurrentTab(tab as any)}
           />
         )}
 
         {currentTab === 'transactions' && (
           <TransactionsView
+            key={filterAccountId}
+            initialAccountId={filterAccountId}
             onSelectTransaction={setSelectedTransaction}
             onOpenAdd={() => handleOpenAdd()}
           />
         )}
 
-        {currentTab === 'accounts' && <AccountsView />}
+        {currentTab === 'accounts' && (
+          <AccountsView
+            onSelectTransaction={setSelectedTransaction}
+            onOpenAdd={handleOpenAdd}
+            onNavigateToFullFeed={handleNavigateToAccountTransactions}
+          />
+        )}
 
         {currentTab === 'more' && <MoreView />}
       </main>
 
       <BottomNav
         currentTab={currentTab === 'insights' ? 'home' : currentTab}
-        onTabChange={tab => setCurrentTab(tab as any)}
+        onTabChange={tab => {
+          if (tab === 'transactions') {
+            setFilterAccountId('ALL');
+          }
+          setCurrentTab(tab as any);
+        }}
         onOpenAdd={() => handleOpenAdd()}
       />
 
       {/* Add Transaction Modal */}
       <AddTransactionModal
         isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => {
+          setShowAddModal(false);
+          setInitialAccountIdForAdd(undefined);
+        }}
         initialType={initialAddType}
+        initialAccountId={initialAccountIdForAdd}
       />
 
       {/* Edit Transaction Modal */}

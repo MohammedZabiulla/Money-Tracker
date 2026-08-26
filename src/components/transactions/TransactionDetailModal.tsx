@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Transaction } from '../../types';
-import { formatINR } from '../../lib/currency';
+import { formatINR, format12HourTime } from '../../lib/currency';
 import { IconHelper, Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
 import {
   X,
@@ -18,6 +18,10 @@ import {
   FileText,
   AlertCircle,
   Repeat,
+  Copy,
+  Check,
+  Plus,
+  StickyNote,
 } from 'lucide-react';
 
 interface TransactionDetailModalProps {
@@ -31,9 +35,21 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   onClose,
   onEdit,
 }) => {
-  const { deleteTransaction, addTransaction, categories } = useMoney();
+  const { deleteTransaction, addTransaction, updateTransaction, categories } = useMoney();
   const [showRefundForm, setShowRefundForm] = useState(false);
   const [refundAmount, setRefundAmount] = useState<string>('');
+
+  // Inline Note Editor state
+  const [isEditingNote, setIsEditingNote] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [copiedNote, setCopiedNote] = useState(false);
+
+  useEffect(() => {
+    if (transaction) {
+      setNoteText(transaction.notes || '');
+      setIsEditingNote(false);
+    }
+  }, [transaction]);
 
   if (!transaction) return null;
 
@@ -44,6 +60,19 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const handleDelete = () => {
     deleteTransaction(transaction.id, true);
     onClose();
+  };
+
+  const handleSaveNote = () => {
+    updateTransaction(transaction.id, { notes: noteText.trim() });
+    setIsEditingNote(false);
+  };
+
+  const handleCopyNote = () => {
+    if (transaction.notes) {
+      navigator.clipboard.writeText(transaction.notes);
+      setCopiedNote(true);
+      setTimeout(() => setCopiedNote(false), 2000);
+    }
   };
 
   const handleRecordRefund = () => {
@@ -129,7 +158,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               <Calendar size={14} className="mr-1.5" /> Date & Time
             </span>
             <span className="font-semibold text-slate-800 dark:text-slate-200">
-              {transaction.date} at {transaction.time || '12:00'}
+              {transaction.date} at {format12HourTime(transaction.time, transaction.timestamp)}
             </span>
           </div>
 
@@ -203,14 +232,106 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             </div>
           )}
 
-          {transaction.notes && (
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-              <span className="text-xs text-slate-500 block mb-1">Notes:</span>
-              <p className="text-xs text-slate-700 dark:text-slate-300 italic bg-slate-50 dark:bg-slate-800 p-2.5 rounded-xl">
-                "{transaction.notes}"
-              </p>
+          {/* Interactive Notes Section */}
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center">
+                <StickyNote size={13} className="mr-1.5 text-amber-500" />
+                Notes
+              </span>
+              {!isEditingNote && (
+                <div className="flex items-center space-x-1">
+                  {transaction.notes && (
+                    <button
+                      type="button"
+                      onClick={handleCopyNote}
+                      className="px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center space-x-1 transition-colors"
+                      title="Copy notes"
+                    >
+                      {copiedNote ? (
+                        <>
+                          <Check size={11} className="text-emerald-500" />
+                          <span className="text-emerald-500">Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={11} />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNoteText(transaction.notes || '');
+                      setIsEditingNote(true);
+                    }}
+                    className="px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg flex items-center space-x-1 transition-colors"
+                  >
+                    {transaction.notes ? (
+                      <>
+                        <Edit2 size={11} />
+                        <span>Edit</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus size={11} />
+                        <span>Add Note</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+
+            {isEditingNote ? (
+              <div className="space-y-2 animate-in fade-in duration-150">
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Write a note about this transaction..."
+                  rows={3}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-emerald-500/50 dark:border-emerald-500/50 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 resize-none font-medium"
+                  autoFocus
+                />
+                <div className="flex items-center justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditingNote(false);
+                      setNoteText(transaction.notes || '');
+                    }}
+                    className="px-3 py-1 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveNote}
+                    className="px-3 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm"
+                  >
+                    Save Note
+                  </button>
+                </div>
+              </div>
+            ) : transaction.notes ? (
+              <div className="p-3 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 text-xs text-slate-800 dark:text-slate-200 italic leading-relaxed whitespace-pre-wrap">
+                "{transaction.notes}"
+              </div>
+            ) : (
+              <div
+                onClick={() => {
+                  setNoteText('');
+                  setIsEditingNote(true);
+                }}
+                className="py-2.5 px-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 text-xs flex items-center justify-center space-x-1.5 cursor-pointer hover:border-emerald-500/50 hover:text-emerald-600 transition-colors"
+              >
+                <Plus size={12} />
+                <span>No notes attached. Click to add a note.</span>
+              </div>
+            )}
+          </div>
 
           {transaction.tags && transaction.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 pt-1">

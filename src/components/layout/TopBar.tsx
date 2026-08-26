@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { useAuth } from '../../context/AuthContext';
 import { FirebaseAuthModal } from '../common/FirebaseAuthModal';
-import { Bell, Lock, ChevronLeft, ChevronRight, Calendar, Search, Sparkles, Trash2, CheckCircle2, ChevronDown, Cloud, CloudOff, User } from 'lucide-react';
+import { ActivityAuditLogModal } from '../more/ActivityAuditLogModal';
+import { Bell, Lock, ChevronLeft, ChevronRight, Calendar, Search, Sparkles, Trash2, CheckCircle2, ChevronDown, Cloud, CloudOff, User, History } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface TopBarProps {
@@ -22,6 +23,7 @@ export const TopBar: React.FC<TopBarProps> = ({ currentTab, onOpenSearch, onOpen
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showActivityModal, setShowActivityModal] = useState(false);
   const monthPickerRef = useRef<HTMLDivElement>(null);
 
   // Month navigation helpers using pure integer arithmetic (safe from UTC/Timezone offset drift)
@@ -123,21 +125,21 @@ export const TopBar: React.FC<TopBarProps> = ({ currentTab, onOpenSearch, onOpen
   });
 
   return (
-    <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 transition-colors">
-      <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-between">
-        {/* Left: App Title or Context Greeting */}
-        <div className="flex items-center space-x-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-sm shadow-emerald-500/20">
-            <span className="font-bold text-lg leading-none">₹</span>
+    <header className="sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 transition-colors shadow-xs">
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2 flex items-center justify-between gap-2">
+        {/* Left: App Title and Sync Status */}
+        <div className="flex items-center space-x-2 shrink-0">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-sm shadow-emerald-500/20 shrink-0">
+            <span className="font-bold text-base sm:text-lg leading-none">₹</span>
           </div>
           <div>
             <div className="flex items-center space-x-1.5">
-              <h1 className="text-base font-semibold text-slate-900 dark:text-white tracking-tight">
+              <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
                 Money Tracker
               </h1>
               <button
                 onClick={() => setShowAuthModal(true)}
-                className={`text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center space-x-1 cursor-pointer transition-colors ${
+                className={`text-[9px] sm:text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center space-x-1 cursor-pointer transition-colors ${
                   user
                     ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
                     : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60'
@@ -145,10 +147,10 @@ export const TopBar: React.FC<TopBarProps> = ({ currentTab, onOpenSearch, onOpen
                 title="Firebase Cloud Sync Status"
               >
                 <Cloud size={10} className={user ? 'text-emerald-500' : 'text-amber-500'} />
-                <span>{user ? (syncStatus === 'syncing' ? 'Syncing...' : 'Cloud Synced') : 'Local'}</span>
+                <span>{user ? (syncStatus === 'syncing' ? 'Syncing...' : 'Cloud') : 'Local'}</span>
               </button>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-normal">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-normal hidden sm:block">
               {currentTab === 'home' && `Hi ${user?.displayName || settings.userName || 'Friend'} 👋`}
               {currentTab === 'insights' && 'Financial Analytics'}
               {currentTab === 'accounts' && 'Accounts & Cards'}
@@ -157,23 +159,23 @@ export const TopBar: React.FC<TopBarProps> = ({ currentTab, onOpenSearch, onOpen
           </div>
         </div>
 
-        {/* Center/Right: Month Switcher */}
-        <div ref={monthPickerRef} className="relative">
-          <div className="flex items-center bg-slate-100/90 dark:bg-slate-800/90 rounded-full px-2 py-1 border border-slate-200/60 dark:border-slate-700/60 shadow-sm">
+        {/* Center: Month Switcher */}
+        <div ref={monthPickerRef} className="relative shrink-0">
+          <div className="flex items-center bg-slate-100/90 dark:bg-slate-800/90 rounded-full px-1.5 py-1 border border-slate-200/60 dark:border-slate-700/60 shadow-xs">
             <button
               onClick={handlePrevMonth}
               className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-full text-slate-600 dark:text-slate-300 transition-colors"
               title="Previous Month"
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft size={15} />
             </button>
             <button
               type="button"
               onClick={() => setShowMonthPicker(!showMonthPicker)}
-              className="flex items-center space-x-1.5 px-2 py-0.5 text-xs font-bold text-slate-800 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors rounded-full"
+              className="flex items-center space-x-1 px-2 py-0.5 text-xs font-bold text-slate-800 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors rounded-full"
             >
               <Calendar size={13} className="text-emerald-500 shrink-0" />
-              <span className="min-w-[70px] text-center tracking-tight">{formatMonthTitle(activeMonth)}</span>
+              <span className="min-w-[65px] text-center tracking-tight text-[11px] sm:text-xs">{formatMonthTitle(activeMonth)}</span>
               <ChevronDown size={12} className={`text-slate-400 transition-transform ${showMonthPicker ? 'rotate-180 text-emerald-500' : ''}`} />
             </button>
             <button
@@ -181,7 +183,7 @@ export const TopBar: React.FC<TopBarProps> = ({ currentTab, onOpenSearch, onOpen
               className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-full text-slate-600 dark:text-slate-300 transition-colors"
               title="Next Month"
             >
-              <ChevronRight size={16} />
+              <ChevronRight size={15} />
             </button>
           </div>
 
@@ -280,13 +282,23 @@ export const TopBar: React.FC<TopBarProps> = ({ currentTab, onOpenSearch, onOpen
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center space-x-1">
+        <div className="flex items-center space-x-1 sm:space-x-1.5 shrink-0">
+          {/* Audit & Activity Log History Button */}
+          <button
+            onClick={() => setShowActivityModal(true)}
+            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-blue-50/80 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 transition-all shadow-2xs group cursor-pointer"
+            title="View Audit & Change Logs"
+          >
+            <History size={15} className="text-blue-600 dark:text-blue-400 group-hover:rotate-[-20deg] transition-transform" />
+            <span className="text-[11px] font-bold tracking-tight hidden md:inline">Change Logs</span>
+          </button>
+
           <button
             onClick={onOpenSearch}
-            className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+            className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
             title="Search & Filters"
           >
-            <Search size={18} />
+            <Search size={17} />
           </button>
 
           {trashCount > 0 && (
@@ -396,6 +408,12 @@ export const TopBar: React.FC<TopBarProps> = ({ currentTab, onOpenSearch, onOpen
       <FirebaseAuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
+      />
+
+      {/* Activity & Audit Log Modal */}
+      <ActivityAuditLogModal
+        isOpen={showActivityModal}
+        onClose={() => setShowActivityModal(false)}
       />
     </header>
   );

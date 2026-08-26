@@ -49,12 +49,14 @@ interface AddTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialType?: TransactionType;
+  initialAccountId?: string;
 }
 
 export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   isOpen,
   onClose,
   initialType = 'EXPENSE',
+  initialAccountId,
 }) => {
   const {
     accounts,
@@ -154,20 +156,30 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setRecurringHasEndDate(false);
       setRecurringEndDate('');
 
-      // Default account: first active non-deleted salary or savings account
-      const defaultAcc = activeAccounts.find(a => a.isActive && (a.type === 'SALARY' || a.type === 'SAVINGS')) || activeAccounts[0];
-      if (defaultAcc) setSelectedAccountId(defaultAcc.id);
-      else setSelectedAccountId('');
+      // Default account or credit card based on initialAccountId if provided
+      if (initialAccountId) {
+        const matchingAcc = activeAccounts.find(a => a.id === initialAccountId);
+        const matchingCard = activeCreditCards.find(c => c.id === initialAccountId);
+        if (matchingAcc) {
+          setSelectedAccountId(matchingAcc.id);
+        } else if (matchingCard) {
+          setSelectedCardId(matchingCard.id);
+        }
+      } else {
+        const defaultAcc = activeAccounts.find(a => a.isActive && (a.type === 'SALARY' || a.type === 'SAVINGS')) || activeAccounts[0];
+        if (defaultAcc) setSelectedAccountId(defaultAcc.id);
+        else setSelectedAccountId('');
 
-      if (activeCreditCards.length > 0) setSelectedCardId(activeCreditCards[0].id);
-      else setSelectedCardId('');
+        if (activeCreditCards.length > 0) setSelectedCardId(activeCreditCards[0].id);
+        else setSelectedCardId('');
+      }
       if (paymentApps.length > 0) setSelectedPaymentAppId(paymentApps[0].id);
 
       // Default category for expense
       const defaultCat = categories.find(c => c.id === 'food_dining') || categories[0];
       if (defaultCat) setSelectedCategoryId(defaultCat.id);
     }
-  }, [isOpen, initialType, activeAccounts, activeCreditCards, categories, paymentApps]);
+  }, [isOpen, initialType, initialAccountId, activeAccounts, activeCreditCards, categories, paymentApps]);
 
   if (!isOpen) return null;
 

@@ -20,6 +20,7 @@ import { CashewExportModal } from './CashewExportModal';
 import { TemplateManagementModal } from '../templates/TemplateManagementModal';
 import { BudgetManagementModal } from './BudgetManagementModal';
 import { LoanManagementModal } from './LoanManagementModal';
+import { ActivityAuditLogModal } from './ActivityAuditLogModal';
 import {
   Target,
   Repeat,
@@ -48,6 +49,7 @@ import {
   Clock,
   Smartphone,
   Check,
+  History,
 } from 'lucide-react';
 
 export const MoreView: React.FC = () => {
@@ -85,6 +87,7 @@ export const MoreView: React.FC = () => {
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showCashewExportModal, setShowCashewExportModal] = useState(false);
+  const [showActivityLogModal, setShowActivityLogModal] = useState(false);
 
   // Wipe / Reset Confirmation Modal State
   const [wipeModalType, setWipeModalType] = useState<
@@ -494,6 +497,29 @@ export const MoreView: React.FC = () => {
               1-Tap Routine Loggers
             </p>
           </button>
+
+          {/* Audit & Change Logs */}
+          <button
+            onClick={() => setShowActivityLogModal(true)}
+            className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-blue-200/80 dark:border-blue-900/60 hover:border-blue-500 text-left transition-all group shadow-xs hover:shadow-md flex flex-col justify-between"
+          >
+            <div>
+              <div className="mb-2.5 group-hover:scale-105 transition-transform inline-block">
+                <Emblem3D icon="History" from="#3b82f6" to="#1d4ed8" finish="crystal" shape="squircle" size="md" glow={true} />
+              </div>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                  Audit Logs
+                </h4>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 font-bold">
+                  {(context.activityLogs || []).length}
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2">
+              Track State Mutations
+            </p>
+          </button>
         </div>
       </div>
 
@@ -529,13 +555,15 @@ export const MoreView: React.FC = () => {
               </div>
             </div>
 
-            <button
-              onClick={() => setShowCashewModal(true)}
-              className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-all active:scale-98"
-            >
-              <Upload size={14} />
-              <span>Launch Cashew Importer</span>
-            </button>
+            <div className="pt-1">
+              <button
+                onClick={() => setShowCashewModal(true)}
+                className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-all active:scale-98"
+              >
+                <Upload size={14} />
+                <span>Launch Cashew Importer</span>
+              </button>
+            </div>
           </div>
 
           {/* Cashew & Multi-Format Exporter Card */}
@@ -653,7 +681,35 @@ export const MoreView: React.FC = () => {
           Security & System Tools
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Audit & Activity Log */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-blue-200/80 dark:border-blue-900/60 shadow-xs flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-2xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                <History size={18} />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                    Audit & Activity Log
+                  </h4>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 font-bold">
+                    {(context.activityLogs || []).length}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Track changes in settings, transactions & ledger
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowActivityLogModal(true)}
+              className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold transition-all"
+            >
+              View Logs
+            </button>
+          </div>
+
           {/* Security PIN Lock */}
           <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -856,6 +912,11 @@ export const MoreView: React.FC = () => {
       <FirebaseAuthModal
         isOpen={showFirebaseAuthModal}
         onClose={() => setShowFirebaseAuthModal(false)}
+      />
+
+      <ActivityAuditLogModal
+        isOpen={showActivityLogModal}
+        onClose={() => setShowActivityLogModal(false)}
       />
 
       {/* Wipe Confirmation Dialog */}

@@ -2,7 +2,7 @@ import React from 'react';
 import { CreditCard, CardNetwork } from '../../types';
 import { CARD_NETWORKS, CARD_THEMES, INDIAN_BANKS } from '../../lib/constants';
 import { formatINR, formatCompactINR } from '../../lib/currency';
-import { Radio, Wifi, Edit2, Trash2, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Radio, Wifi, Edit2, Trash2, ArrowRight, CheckCircle2, Receipt } from 'lucide-react';
 
 // Authentic SVG Network Badges
 export const NetworkLogo: React.FC<{ network?: string; className?: string; light?: boolean }> = ({
@@ -98,6 +98,7 @@ interface CardVisualProps {
   onEdit?: () => void;
   onDelete?: () => void;
   onPayBill?: () => void;
+  onViewTransactions?: () => void;
   showActions?: boolean;
 }
 
@@ -106,6 +107,7 @@ export const CardVisual: React.FC<CardVisualProps> = ({
   onEdit,
   onDelete,
   onPayBill,
+  onViewTransactions,
   showActions = true,
 }) => {
   const themeKey = card.cardTheme || 'midnight';
@@ -117,7 +119,10 @@ export const CardVisual: React.FC<CardVisualProps> = ({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-3xl p-5 text-white bg-gradient-to-br ${theme.gradient} border ${theme.border || 'border-white/15'} shadow-xl transition-all duration-200 hover:shadow-2xl`}
+      onClick={onViewTransactions}
+      className={`relative overflow-hidden rounded-3xl p-5 text-white bg-gradient-to-br ${theme.gradient} border ${theme.border || 'border-white/15'} shadow-xl transition-all duration-200 hover:shadow-2xl group ${
+        onViewTransactions ? 'cursor-pointer hover:scale-[1.01]' : ''
+      }`}
       style={{
         boxShadow: `0 10px 25px -5px ${card.color ? card.color + '40' : 'rgba(0,0,0,0.4)'}`,
       }}
@@ -239,8 +244,21 @@ export const CardVisual: React.FC<CardVisualProps> = ({
 
       {/* Card Action Buttons */}
       {showActions && (
-        <div className="relative z-10 mt-3.5 pt-3 border-t border-white/10 flex items-center justify-between">
+        <div
+          onClick={e => e.stopPropagation()}
+          className="relative z-10 mt-3.5 pt-3 border-t border-white/10 flex items-center justify-between flex-wrap gap-2"
+        >
           <div className="flex items-center space-x-2">
+            {onViewTransactions && (
+              <button
+                onClick={onViewTransactions}
+                className="px-2.5 py-1 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-semibold flex items-center space-x-1 transition-all border border-white/20 active:scale-95 cursor-pointer"
+                title="View transactions made on this card"
+              >
+                <Receipt size={12} />
+                <span>Transactions</span>
+              </button>
+            )}
             {onEdit && (
               <button
                 onClick={onEdit}
