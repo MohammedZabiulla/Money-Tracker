@@ -81,6 +81,7 @@ export const LentBorrowedManagementModal: React.FC<LentBorrowedManagementModalPr
 
   const filteredDebts = useMemo(() => {
     return debts.filter(d => {
+      if (d.isDeleted) return false;
       const matchSearch =
         !searchQuery.trim() ||
         d.personName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -156,7 +157,7 @@ export const LentBorrowedManagementModal: React.FC<LentBorrowedManagementModalPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/50 dark:bg-slate-850/50">
@@ -173,9 +174,6 @@ export const LentBorrowedManagementModal: React.FC<LentBorrowedManagementModalPr
                   Peer Ledger
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Track money lent to friends, family receivables, split dues & personal payables
-              </p>
             </div>
           </div>
 
@@ -296,7 +294,7 @@ export const LentBorrowedManagementModal: React.FC<LentBorrowedManagementModalPr
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {filteredDebts.map(debt => {
+                {filteredDebts.map((debt, idx) => {
                   const isLent = debt.type === 'LENT';
                   const initials = debt.personName
                     .split(' ')
@@ -308,7 +306,7 @@ export const LentBorrowedManagementModal: React.FC<LentBorrowedManagementModalPr
 
                   return (
                     <div
-                      key={debt.id}
+                      key={`debt_${debt.id}_${idx}`}
                       className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between space-y-3 group ${
                         debt.isSettled
                           ? 'bg-slate-50 dark:bg-slate-850/50 border-slate-200/50 dark:border-slate-800 opacity-60'

@@ -2,7 +2,7 @@ import { CurrencyRate } from '../types';
 
 /**
  * Currency and Safe Monetary Arithmetic Utility for Indian Rupee (INR - ₹)
- * plus Live Multi-Currency FX Engine (Cashew signature feature)
+ * plus Live Multi-Currency FX Engine 
  */
 
 export const CURRENCY_RATES: Record<string, CurrencyRate> = {

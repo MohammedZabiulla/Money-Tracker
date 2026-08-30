@@ -2,21 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Transaction } from '../../types';
 import { formatINR, format12HourTime } from '../../lib/currency';
-import { IconHelper, Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
+import { Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
+import { ConfirmDeleteModal } from '../common/ConfirmDeleteModal';
 import {
   X,
   Trash2,
   Edit2,
   Calendar,
-  Clock,
-  Tag,
   CreditCard,
   Building,
   RotateCcw,
   ArrowRightLeft,
   Smartphone,
   FileText,
-  AlertCircle,
   Repeat,
   Copy,
   Check,
@@ -35,7 +33,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   onClose,
   onEdit,
 }) => {
-  const { deleteTransaction, addTransaction, updateTransaction, categories } = useMoney();
+  const { deleteTransaction, addTransaction, updateTransaction, categories, accounts, creditCards } = useMoney();
   const [showRefundForm, setShowRefundForm] = useState(false);
   const [refundAmount, setRefundAmount] = useState<string>('');
 
@@ -43,23 +41,29 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [copiedNote, setCopiedNote] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (transaction) {
       setNoteText(transaction.notes || '');
       setIsEditingNote(false);
+      setShowDeleteConfirm(false);
     }
   }, [transaction]);
 
   if (!transaction) return null;
 
-  const isIncome = transaction.type === 'INCOME';
-  const isTransfer = transaction.type === 'TRANSFER';
+  const isIncome = transaction.type === 'INCOME' || transaction.type === 'MONEY_LENT_REPAYMENT' || transaction.type === 'INVESTMENT_WITHDRAWAL' || transaction.type === 'REFUND';
+  const isTransfer = transaction.type === 'TRANSFER' || transaction.type === 'CARD_PAYMENT' || transaction.type === 'INVESTMENT_CONTRIBUTION';
   const cat = categories.find(c => c.id === transaction.categoryId);
+  
+  // Resolve accounts/cards if they are missing their names (e.g., from old imports)
+  const resolvedAccountName = transaction.accountName || accounts.find(a => a.id === transaction.accountId)?.name;
+  const resolvedCreditCardName = transaction.creditCardName || creditCards.find(c => c.id === transaction.creditCardId)?.name;
+  const resolvedToAccountName = transaction.toAccountName || accounts.find(a => a.id === transaction.toAccountId)?.name;
 
   const handleDelete = () => {
-    deleteTransaction(transaction.id, true);
-    onClose();
+    setShowDeleteConfirm(true);
   };
 
   const handleSaveNote = () => {
@@ -104,19 +108,28 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-[200] bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in slide-in-from-bottom-6">
         {/* Header */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
             Transaction Details
           </span>
-          <button
-            onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center space-x-2">
+            <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full ${
+              isIncome ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' :
+              isTransfer ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400' :
+              'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+            }`}>
+              {transaction.type === 'CARD_PAYMENT' ? 'Card Bill' : transaction.type === 'MONEY_BORROWED' ? 'Borrowed' : transaction.type === 'MONEY_LENT' ? 'Lent' : isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense'}
+            </span>
+            <button
+              onClick={onClose}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Hero Amount & Merchant */}
@@ -133,17 +146,38 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
             {transaction.merchantName || transaction.categoryName || 'Transaction'}
           </h2>
-          <div
-            className={`text-3xl font-extrabold mt-1 ${
-              isIncome
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : isTransfer
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-slate-900 dark:text-white'
-            }`}
-          >
-            {isIncome ? `+${formatINR(transaction.amount)}` : `-${formatINR(transaction.amount)}`}
-          </div>
+          {/* Multi-Currency Support */}
+          {transaction.originalCurrency && transaction.originalCurrency !== 'INR' ? (
+            <div className="space-y-1 mt-2 animate-in fade-in duration-150">
+              <h3 className="text-xl font-bold text-slate-600 dark:text-slate-400">
+                {transaction.originalCurrency} {transaction.originalAmount?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </h3>
+              <p className="text-[10px] text-slate-400 font-semibold">
+                Exchange rate: 1 {transaction.originalCurrency} = ₹{transaction.exchangeRate}
+              </p>
+              <div className={`text-3xl font-extrabold ${
+                isIncome
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : isTransfer
+                  ? 'text-blue-600 dark:text-blue-400'
+                  : 'text-slate-900 dark:text-white'
+              }`}>
+                {isIncome ? `+${formatINR(transaction.amount)}` : isTransfer ? formatINR(transaction.amount) : `-${formatINR(transaction.amount)}`}
+              </div>
+            </div>
+          ) : (
+            <div
+              className={`text-3xl font-extrabold mt-1 ${
+                isIncome
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : isTransfer
+                  ? 'text-blue-600 dark:text-blue-400'
+                  : 'text-slate-900 dark:text-white'
+              }`}
+            >
+              {isIncome ? `+${formatINR(transaction.amount)}` : isTransfer ? formatINR(transaction.amount) : `-${formatINR(transaction.amount)}`}
+            </div>
+          )}
           {transaction.refundAmount && transaction.refundAmount > 0 && (
             <p className="text-xs text-emerald-600 mt-1">
               (Refunded: {formatINR(transaction.refundAmount)} • Net: {formatINR(transaction.amount - transaction.refundAmount)})
@@ -171,38 +205,96 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             </span>
           </div>
 
-          {(transaction.accountName || transaction.creditCardName) && (
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500 text-xs flex items-center">
-                <Building size={14} className="mr-1.5" /> Account / Card
-              </span>
-              <div className="flex items-center space-x-1.5 font-semibold text-slate-800 dark:text-slate-200">
-                <Bank3DIcon
-                  name={transaction.creditCardId ? 'CreditCard' : 'Building2'}
-                  institution={transaction.creditCardName || transaction.accountName}
-                  color={transaction.creditCardId ? '#9333ea' : '#059669'}
-                  size="xs"
-                />
-                <span>{transaction.creditCardName || transaction.accountName}</span>
-              </div>
-            </div>
-          )}
-
-          {transaction.toAccountName && (
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500 text-xs flex items-center">
-                <ArrowRightLeft size={14} className="mr-1.5" /> Transferred To
-              </span>
-              <div className="flex items-center space-x-1.5 font-semibold text-slate-800 dark:text-slate-200">
-                <Bank3DIcon
-                  name="Building2"
-                  institution={transaction.toAccountName}
-                  color="#2563eb"
-                  size="xs"
-                />
-                <span>{transaction.toAccountName}</span>
-              </div>
-            </div>
+          {/* If CARD_PAYMENT */}
+          {transaction.type === 'CARD_PAYMENT' ? (
+            <>
+              {resolvedAccountName && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 text-xs flex items-center">
+                    <Building size={14} className="mr-1.5" /> Paid From
+                  </span>
+                  <div className="flex items-center space-x-1.5 font-semibold text-slate-800 dark:text-slate-200">
+                    <Bank3DIcon
+                      name="Building2"
+                      institution={resolvedAccountName}
+                      color="#059669"
+                      size="xs"
+                    />
+                    <span>{resolvedAccountName}</span>
+                  </div>
+                </div>
+              )}
+              {resolvedCreditCardName && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 text-xs flex items-center">
+                    <CreditCard size={14} className="mr-1.5" /> Paid To Card
+                  </span>
+                  <div className="flex items-center space-x-1.5 font-semibold text-slate-800 dark:text-slate-200">
+                    <Bank3DIcon
+                      name="CreditCard"
+                      institution={resolvedCreditCardName}
+                      color="#9333ea"
+                      size="xs"
+                    />
+                    <span>{resolvedCreditCardName}</span>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : transaction.type === 'TRANSFER' ? (
+            <>
+              {(resolvedAccountName || resolvedCreditCardName) && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 text-xs flex items-center">
+                    <Building size={14} className="mr-1.5" /> Transferred From
+                  </span>
+                  <div className="flex items-center space-x-1.5 font-semibold text-slate-800 dark:text-slate-200">
+                    <Bank3DIcon
+                      name={transaction.creditCardId && !transaction.accountId ? 'CreditCard' : 'Building2'}
+                      institution={resolvedAccountName || resolvedCreditCardName}
+                      color={transaction.creditCardId && !transaction.accountId ? '#9333ea' : '#059669'}
+                      size="xs"
+                    />
+                    <span>{resolvedAccountName || resolvedCreditCardName}</span>
+                  </div>
+                </div>
+              )}
+              {resolvedToAccountName && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 text-xs flex items-center">
+                    <ArrowRightLeft size={14} className="mr-1.5" /> Transferred To
+                  </span>
+                  <div className="flex items-center space-x-1.5 font-semibold text-slate-800 dark:text-slate-200">
+                    <Bank3DIcon
+                      name="Building2"
+                      institution={resolvedToAccountName}
+                      color="#2563eb"
+                      size="xs"
+                    />
+                    <span>{resolvedToAccountName}</span>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {(resolvedAccountName || resolvedCreditCardName) && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 text-xs flex items-center">
+                    <Building size={14} className="mr-1.5" /> Account / Card
+                  </span>
+                  <div className="flex items-center space-x-1.5 font-semibold text-slate-800 dark:text-slate-200">
+                    <Bank3DIcon
+                      name={transaction.creditCardId ? 'CreditCard' : 'Building2'}
+                      institution={resolvedCreditCardName || resolvedAccountName}
+                      color={transaction.creditCardId ? '#9333ea' : '#059669'}
+                      size="xs"
+                    />
+                    <span>{resolvedCreditCardName || resolvedAccountName}</span>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {transaction.paymentAppName && (
@@ -229,6 +321,49 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               <span className="font-extrabold text-xs text-indigo-900 dark:text-indigo-200">
                 {transaction.recurringName || 'Auto-Recorded Entry'}
               </span>
+            </div>
+          )}
+
+          {/* Debt Engagement Details (Consistent with Hold-to-Preview) */}
+          {transaction.debtPersonName && (
+            <div className="bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/10 dark:border-rose-500/20 rounded-2xl p-3 text-xs space-y-1.5 animate-in fade-in duration-150">
+              <div className="flex justify-between items-center border-b border-rose-500/10 pb-1">
+                <span className="font-bold text-rose-600 dark:text-rose-400 uppercase text-[9px] tracking-wider">Debt Engagement</span>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
+                  transaction.isDebtSettled 
+                    ? 'bg-emerald-100/80 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400' 
+                    : 'bg-amber-100/80 dark:bg-amber-950/50 text-amber-700'
+                }`}>
+                  {transaction.isDebtSettled ? 'Settled' : 'Pending'}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-600 dark:text-slate-300 font-medium">
+                <span>Counterparty:</span>
+                <span className="font-black text-slate-800 dark:text-slate-100">{transaction.debtPersonName}</span>
+              </div>
+              {transaction.debtDueDate && (
+                <div className="flex justify-between text-slate-600 dark:text-slate-300 font-medium">
+                  <span>Expected Due:</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-100">{transaction.debtDueDate}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Splits Breakdown (Consistent with Hold-to-Preview) */}
+          {transaction.splits && transaction.splits.length > 0 && (
+            <div className="bg-purple-500/5 dark:bg-purple-500/10 border border-purple-500/10 dark:border-purple-500/20 rounded-2xl p-3 text-xs space-y-2 animate-in fade-in duration-150">
+              <span className="font-extrabold text-purple-600 dark:text-purple-400 uppercase text-[9px] tracking-wider block">
+                Bill Splits ({transaction.splits.length})
+              </span>
+              <div className="space-y-1.5 max-h-[120px] overflow-y-auto custom-scrollbar">
+                {transaction.splits.map((s, idx) => (
+                  <div key={`${s.notes || 'split'}-${idx}`} className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                    <span className="truncate max-w-[200px] font-medium">{s.notes || `Person ${idx + 1}`}</span>
+                    <span className="font-black text-slate-800 dark:text-slate-200">{formatINR(s.amount)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -413,6 +548,26 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmDeleteModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={() => {
+          deleteTransaction(transaction.id, true);
+          setShowDeleteConfirm(false);
+          onClose();
+        }}
+        title="Delete Transaction?"
+        description="Are you sure you want to move this transaction to the Trash Bin? You can restore it anytime from More → Trash Bin."
+        itemDetails={{
+          title: transaction.merchantName || transaction.categoryName || transaction.notes || 'Transaction',
+          amount: isIncome ? `+${formatINR(transaction.amount)}` : isTransfer ? formatINR(transaction.amount) : `-${formatINR(transaction.amount)}`,
+          subtitle: `${transaction.date} • ${transaction.type.replace(/_/g, ' ')}`,
+          badge: transaction.categoryName || 'General',
+        }}
+        confirmLabel="Move to Trash"
+      />
     </div>
   );
 };

@@ -2,31 +2,18 @@ import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Investment, InvestmentCategory, InvestmentCatalogItem } from '../../types';
 import { formatINR } from '../../lib/currency';
-import { Emblem3D, Category3DIcon } from '../common/IconHelper';
+import { Emblem3D } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { CustomDatePicker } from '../common/CustomDatePicker';
 import {
   X,
   Plus,
   Search,
-  Check,
   Edit2,
   Trash2,
   Sparkles,
   TrendingUp,
-  TrendingDown,
-  PieChart,
-  Landmark,
-  Shield,
-  Coins,
-  Gem,
-  Award,
   Layers,
-  ArrowUpRight,
-  CheckCircle2,
-  Calendar,
-  Building,
-  DollarSign,
 } from 'lucide-react';
 
 interface InvestmentManagementModalProps {
@@ -261,6 +248,7 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
 
   const filteredInvestments = useMemo(() => {
     return investments.filter(inv => {
+      if (inv.isDeleted) return false;
       const matchSearch =
         !searchQuery.trim() ||
         inv.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -380,8 +368,8 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+    <div className="fixed inset-0 z-[100] bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col h-[92vh] sm:h-auto sm:max-h-[88vh] my-auto overflow-hidden">
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/50 dark:bg-slate-850/50">
           <div className="flex items-center space-x-3">
@@ -397,9 +385,6 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                   Wealth Hub
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Track Mutual Funds, SIPs, Indian Stocks, Sovereign Gold Bonds, FDs & PPF
-              </p>
             </div>
           </div>
 
@@ -506,9 +491,25 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                 />
               </div>
 
+              <div className="flex items-center space-x-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+                {['ALL', 'MUTUAL_FUNDS', 'STOCKS', 'GOLD', 'FIXED_INCOME', 'CRYPTO'].map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setCatFilter(c)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all ${
+                      catFilter === c
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {c === 'ALL' ? 'All' : INVESTMENT_CATEGORIES_CONFIG[c as InvestmentCategory]?.label || c}
+                  </button>
+                ))}
+              </div>
+
               <button
                 onClick={() => setActiveTab('CUSTOM')}
-                className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm flex items-center justify-center space-x-1.5"
+                className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm flex items-center justify-center space-x-1.5 shrink-0"
               >
                 <Plus size={13} />
                 <span>Add Investment</span>
@@ -533,7 +534,7 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {filteredInvestments.map(inv => {
+                {filteredInvestments.map((inv, idx) => {
                   const cfg = INVESTMENT_CATEGORIES_CONFIG[inv.category] || INVESTMENT_CATEGORIES_CONFIG.OTHER;
                   const invested = inv.investedAmount || 0;
                   const current = inv.currentValue ?? invested;
@@ -542,7 +543,7 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
 
                   return (
                     <div
-                      key={inv.id}
+                      key={`inv_manage_${inv.id}_${idx}`}
                       className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 hover:border-emerald-400 dark:hover:border-emerald-500 transition-all flex flex-col justify-between space-y-3 group hover:shadow-md"
                     >
                       <div className="flex items-start justify-between">
@@ -622,9 +623,9 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
         {activeTab === 'CATALOGUE' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {filteredCatalogue.map(item => (
+              {filteredCatalogue.map((item, idx) => (
                 <div
-                  key={item.id}
+                  key={`inv_cat_${item.id}_${idx}`}
                   className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 hover:border-emerald-400 dark:hover:border-emerald-500 transition-all flex flex-col justify-between space-y-3 group hover:shadow-md"
                 >
                   <div>
@@ -863,6 +864,24 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                 />
               </div>
 
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Funded From Account (Optional)
+                </label>
+                <select
+                  value={adoptAccountId}
+                  onChange={e => setAdoptAccountId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold outline-none text-slate-800 dark:text-slate-200"
+                >
+                  <option value="">No linked account</option>
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name} ({formatINR(acc.calculatedBalance)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <button
                 onClick={handleConfirmAdopt}
                 className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-all active:scale-98"
@@ -875,7 +894,7 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
 
         {/* Edit Investment Modal */}
         {editingInv && (
-          <div className="fixed inset-0 z-60 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[110] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-md w-full space-y-4 border border-emerald-200 dark:border-emerald-900/40 shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                 <h3 className="font-bold text-sm text-slate-900 dark:text-white">

@@ -7,6 +7,9 @@ import {
   X,
 } from 'lucide-react';
 import { Category3DIcon } from './Category3DIcon';
+import { Bank3DIcon } from './Bank3DIcon';
+import { CARD_THEMES } from '../../lib/constants';
+import { EMVChip, NetworkLogo } from './CardVisual';
 
 export interface SelectOption<T = string> {
   value: T;
@@ -21,6 +24,11 @@ export interface SelectOption<T = string> {
   rightTextColor?: string;
   badge?: string;
   disabled?: boolean;
+  isCreditCard?: boolean;
+  cardTheme?: string;
+  network?: string;
+  isBankAccount?: boolean;
+  bankTheme?: string;
 }
 
 export interface CustomSelectProps<T = string> {
@@ -275,7 +283,7 @@ export function CustomSelect<T extends string | number>({
                   <div className="relative">
                     <Search
                       size={16}
-                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
                     />
                     <input
                       ref={searchInputRef}
@@ -306,15 +314,15 @@ export function CustomSelect<T extends string | number>({
                     <p className="text-xs text-slate-500 mt-1">Try another search query</p>
                   </div>
                 ) : groupedOptions ? (
-                  (Object.entries(groupedOptions) as [string, SelectOption<T>[]][]).map(([groupName, groupOpts]) => (
-                    <div key={groupName} className="pt-2 first:pt-0">
+                  (Object.entries(groupedOptions) as [string, SelectOption<T>[]][]).map(([groupName, groupOpts], gIdx) => (
+                    <div key={`grp_${groupName}_${gIdx}`} className="pt-2 first:pt-0">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-3 py-1 mb-1">
                         {groupName}
                       </div>
                       <div className="space-y-1">
-                        {groupOpts.map(opt => (
+                        {groupOpts.map((opt, idx) => (
                           <OptionItem<T>
-                            key={String(opt.value)}
+                            key={`grp_opt_${String(opt.value)}_${opt.label}_${idx}`}
                             option={opt}
                             isSelected={opt.value === value}
                             onSelect={() => handleSelect(opt.value)}
@@ -325,9 +333,9 @@ export function CustomSelect<T extends string | number>({
                     </div>
                   ))
                 ) : (
-                  filteredOptions.map(opt => (
+                  filteredOptions.map((opt, idx) => (
                     <OptionItem<T>
-                      key={String(opt.value)}
+                      key={`opt_${String(opt.value)}_${opt.label}_${idx}`}
                       option={opt}
                       isSelected={opt.value === value}
                       onSelect={() => handleSelect(opt.value)}
@@ -353,6 +361,114 @@ interface OptionItemProps<T> {
 }
 
 function OptionItem<T>({ option, isSelected, onSelect, renderIcon }: OptionItemProps<T>) {
+  if (option.isBankAccount) {
+    return (
+      <button
+        type="button"
+        disabled={option.disabled}
+        onClick={onSelect}
+        className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all group bg-gradient-to-r from-emerald-950/60 via-slate-900/90 to-teal-950/60 text-white shadow-md border ${
+          isSelected ? 'border-emerald-400 ring-2 ring-emerald-400/50 scale-[1.01]' : 'border-emerald-500/30'
+        } ${option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:border-emerald-500/60 hover:shadow-lg'}`}
+      >
+        <div className="flex items-center space-x-3 min-w-0 pr-3">
+          <Bank3DIcon institution={option.bankTheme || 'OTHER'} size="md" />
+          <div className="min-w-0">
+            <div className="flex items-center space-x-2">
+              <span className="text-xs sm:text-sm font-bold text-white truncate drop-shadow-xs">
+                {option.label}
+              </span>
+              {option.badge && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/35 shrink-0">
+                  {option.badge}
+                </span>
+              )}
+            </div>
+            {option.sublabel && (
+              <p className="text-[11px] text-emerald-200/80 truncate mt-0.5 font-medium">
+                {option.sublabel}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-3 shrink-0">
+          {option.rightText && (
+            <div className="text-right">
+              <span className="text-xs sm:text-sm font-black text-emerald-300 block drop-shadow-xs">
+                {option.rightText}
+              </span>
+            </div>
+          )}
+          <div
+            className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+              isSelected
+                ? 'bg-emerald-500 text-white shadow-xs scale-105 ring-2 ring-white/40'
+                : 'border border-emerald-500/40 bg-black/20 opacity-60 group-hover:opacity-100'
+            }`}
+          >
+            {isSelected && <Check size={12} strokeWidth={3} />}
+          </div>
+        </div>
+      </button>
+    );
+  }
+
+  if (option.isCreditCard || option.cardTheme) {
+    const theme = CARD_THEMES.find(t => t.id === option.cardTheme) || CARD_THEMES[0];
+    return (
+      <button
+        type="button"
+        disabled={option.disabled}
+        onClick={onSelect}
+        className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all group bg-gradient-to-br ${theme.gradient} text-white shadow-md border ${
+          isSelected ? 'border-emerald-400 ring-2 ring-emerald-400/50 scale-[1.01]' : (theme.border || 'border-white/20')
+        } ${option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:shadow-lg'}`}
+      >
+        <div className="flex items-center space-x-3 min-w-0 pr-3">
+          <EMVChip size="sm" />
+          <div className="min-w-0">
+            <div className="flex items-center space-x-2">
+              <span className="text-xs sm:text-sm font-bold text-white truncate drop-shadow-xs">
+                {option.label}
+              </span>
+              {option.badge && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/20 text-white shrink-0">
+                  {option.badge}
+                </span>
+              )}
+            </div>
+            {option.sublabel && (
+              <p className="text-[11px] text-slate-200 truncate mt-0.5 font-medium">
+                {option.sublabel}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-3 shrink-0">
+          <NetworkLogo network={option.network || 'VISA'} className="h-4" />
+          {option.rightText && (
+            <div className="text-right hidden xs:block">
+              <span className="text-xs font-bold text-emerald-300 block">
+                {option.rightText}
+              </span>
+            </div>
+          )}
+          <div
+            className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+              isSelected
+                ? 'bg-emerald-500 text-white shadow-xs scale-105 ring-2 ring-white/40'
+                : 'border border-white/40 bg-black/20 opacity-60 group-hover:opacity-100'
+            }`}
+          >
+            {isSelected && <Check size={12} strokeWidth={3} />}
+          </div>
+        </div>
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"

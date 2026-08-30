@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Subscription, SubscriptionCatalogItem, RecurrenceFrequency } from '../../types';
 import { formatINR } from '../../lib/currency';
-import { Emblem3D, Category3DIcon, SubscriptionBrandIcon } from '../common/IconHelper';
+import { Category3DIcon, SubscriptionBrandIcon } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { CustomDatePicker } from '../common/CustomDatePicker';
 import {
@@ -14,23 +14,12 @@ import {
   Trash2,
   Sparkles,
   Repeat,
-  Calendar,
   CreditCard as CreditCardIcon,
-  Tag,
   CheckCircle2,
   Layers,
-  ChevronRight,
   TrendingUp,
   AlertCircle,
   Clock,
-  Tv,
-  Music,
-  Zap,
-  ShoppingBag,
-  Gamepad2,
-  HeartPulse,
-  Wifi,
-  Bookmark,
 } from 'lucide-react';
 
 interface SubscriptionManagementModalProps {
@@ -1081,7 +1070,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
     d.setDate(d.getDate() + 15);
     return d.toISOString().substring(0, 10);
   });
-  const [customIcon, setCustomIcon] = useState('Repeat');
+  const [customIcon] = useState('Repeat');
   const [customColor, setCustomColor] = useState('#8B5CF6');
   const [customAccountId, setCustomAccountId] = useState('');
   const [customNotes, setCustomNotes] = useState('');
@@ -1100,15 +1089,21 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
         value: a.id,
         label: a.name,
         sublabel: `${a.institution} • ${formatINR(a.calculatedBalance)}`,
+        rightText: formatINR(a.calculatedBalance),
         icon: <Category3DIcon name={a.icon} color={a.color} size="xs" />,
+        isBankAccount: true,
+        bankTheme: a.institution || a.name || a.type,
       });
     });
     creditCards.forEach(c => {
       opts.push({
         value: c.id,
         label: `${c.name} (${c.lastFourDigits})`,
-        sublabel: `Credit Card • Limit: ${formatINR(c.creditLimit)}`,
-        icon: <CreditCardIcon size={14} className="text-purple-400" />,
+        sublabel: `Due: ${formatINR(c.currentOutstanding)} • Avail: ${formatINR(Math.max(0, c.creditLimit - c.currentOutstanding))}`,
+        isCreditCard: true,
+        cardTheme: c.cardTheme,
+        network: c.network,
+        rightText: `Due: ${formatINR(c.currentOutstanding)}`,
       });
     });
     return opts;
@@ -1124,6 +1119,8 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
   ];
 
   // Calculations for active subscriptions
+  const activeSubscriptions = useMemo(() => (subscriptions || []).filter(s => !s.isDeleted), [subscriptions]);
+
   const { totalMonthlySpend, totalAnnualSpend, upcomingCount } = useMemo(() => {
     let monthly = 0;
     let upcoming = 0;
@@ -1131,7 +1128,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
     const next7Days = new Date();
     next7Days.setDate(now.getDate() + 7);
 
-    subscriptions.forEach(s => {
+    activeSubscriptions.forEach(s => {
       if (!s.isActive) return;
       let mCost = s.amount;
       if (s.frequency === 'YEARLY') mCost = s.amount / 12;
@@ -1154,7 +1151,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
       totalAnnualSpend: monthly * 12,
       upcomingCount: upcoming,
     };
-  }, [subscriptions]);
+  }, [activeSubscriptions]);
 
   const filteredCatalogue = useMemo(() => {
     return SUBSCRIPTIONS_CATALOGUE.filter(item => {
@@ -1245,8 +1242,8 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+    <div className="fixed inset-0 z-[100] bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-2.5 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col h-[92vh] sm:h-auto sm:max-h-[88vh] my-auto overflow-hidden">
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/50 dark:bg-slate-850/50">
           <div className="flex items-center space-x-3">
@@ -1262,9 +1259,6 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
                   Catalogue & Tracker
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Browse Indian & global subscriptions catalogue or craft custom recurring services
-              </p>
             </div>
           </div>
 
@@ -1309,7 +1303,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
             <div>
               <span className="text-[10px] text-slate-400 block font-semibold">Tracked Active</span>
               <span className="font-extrabold text-emerald-600 dark:text-emerald-400 text-xs sm:text-sm">
-                {subscriptions.length} Services {upcomingCount > 0 && `• ${upcomingCount} Due soon`}
+                {activeSubscriptions.length} Services {upcomingCount > 0 && `• ${upcomingCount} Due soon`}
               </span>
             </div>
           </div>
@@ -1338,7 +1332,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
             }`}
           >
             <Layers size={14} />
-            <span>My Active Subscriptions ({subscriptions.length})</span>
+            <span>My Active Subscriptions ({activeSubscriptions.length})</span>
           </button>
 
           <button
@@ -1399,14 +1393,14 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
 
             {/* Grid of Preset Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {filteredCatalogue.map(item => {
-                const alreadySubscribed = subscriptions.some(
+              {filteredCatalogue.map((item, idx) => {
+                const alreadySubscribed = activeSubscriptions.some(
                   s => s.name.toLowerCase().includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(s.name.toLowerCase())
                 );
 
                 return (
                   <div
-                    key={item.id}
+                    key={`sub_cat_${item.id}_${idx}`}
                     className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 hover:border-purple-400 dark:hover:border-purple-600 transition-all flex flex-col justify-between space-y-3 group hover:shadow-md"
                   >
                     <div>
@@ -1469,7 +1463,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-                Tracked Subscriptions ({subscriptions.length})
+                Tracked Subscriptions ({activeSubscriptions.length})
               </h4>
               <button
                 onClick={() => setActiveTab('CUSTOM')}
@@ -1480,7 +1474,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
               </button>
             </div>
 
-            {subscriptions.length === 0 ? (
+            {activeSubscriptions.length === 0 ? (
               <div className="py-16 text-center bg-slate-50 dark:bg-slate-850 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700">
                 <Repeat size={36} className="text-slate-400 mx-auto mb-2" />
                 <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
@@ -1498,9 +1492,9 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
               </div>
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {subscriptions.map(sub => (
+                {activeSubscriptions.map((sub, idx) => (
                   <div
-                    key={sub.id}
+                    key={`sub_${sub.id}_${idx}`}
                     className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
                   >
                     <div className="flex items-center space-x-3">
@@ -1691,7 +1685,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
 
         {/* 1-Click Adopt / Subscribe Modal Dialog */}
         {selectedCatalogItem && (
-          <div className="fixed inset-0 z-60 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[110] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-md w-full space-y-4 border border-purple-200 dark:border-purple-900/40 shadow-2xl animate-in zoom-in-95">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                 <div className="flex items-center space-x-2.5">
@@ -1792,7 +1786,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
 
         {/* Edit Active Subscription Dialog */}
         {editingSub && (
-          <div className="fixed inset-0 z-60 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[110] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-md w-full space-y-4 border border-purple-200 dark:border-purple-900/40 shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
                 <h3 className="font-bold text-sm text-slate-900 dark:text-white">

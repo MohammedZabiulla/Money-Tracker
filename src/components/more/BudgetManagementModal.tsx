@@ -3,7 +3,7 @@ import { useMoney } from '../../context/MoneyContext';
 import { formatINR } from '../../lib/currency';
 import { Emblem3D } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
-import { X, Plus, Trash2, Coins, Target, AlertCircle, CheckCircle2, TrendingDown } from 'lucide-react';
+import { X, Plus, Trash2, Coins, AlertCircle } from 'lucide-react';
 
 interface BudgetManagementModalProps {
   isOpen: boolean;
@@ -55,7 +55,7 @@ export const BudgetManagementModal: React.FC<BudgetManagementModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-850/50 shrink-0">
@@ -65,9 +65,6 @@ export const BudgetManagementModal: React.FC<BudgetManagementModalProps> = ({
               <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
                 Monthly Budgets & Category Caps
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Set monthly spending boundaries and prevent budget overruns
-              </p>
             </div>
           </div>
           <button
@@ -150,9 +147,9 @@ export const BudgetManagementModal: React.FC<BudgetManagementModalProps> = ({
               <p className="text-[11px]">Add limits above to monitor your spending.</p>
             </div>
           ) : (
-            budgets.map(b => (
+            budgets.map((b, idx) => (
               <div
-                key={b.id}
+                key={`budget_manage_${b.id}_${idx}`}
                 className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/70 flex items-center justify-between group hover:border-blue-300 dark:hover:border-blue-700 transition-all"
               >
                 <div className="flex items-center space-x-3">

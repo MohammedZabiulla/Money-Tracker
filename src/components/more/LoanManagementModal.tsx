@@ -3,7 +3,7 @@ import { useMoney } from '../../context/MoneyContext';
 import { formatINR } from '../../lib/currency';
 import { Emblem3D } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
-import { X, Plus, Trash2, Landmark, AlertCircle, CheckCircle2, Calendar, CreditCard } from 'lucide-react';
+import { X, Plus, Trash2, Landmark, AlertCircle } from 'lucide-react';
 
 interface LoanManagementModalProps {
   isOpen: boolean;
@@ -15,6 +15,7 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
   onClose,
 }) => {
   const { loans, accounts, addLoan, payLoanEMI, deleteLoan } = useMoney();
+  const activeLoans = loans.filter(l => !l.isDeleted);
 
   const [name, setName] = useState('');
   const [lenderName, setLenderName] = useState('HDFC Bank');
@@ -93,7 +94,7 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
   }));
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-850/50 shrink-0">
@@ -103,9 +104,6 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
               <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
                 Loans & EMI Schedules
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Track principal repayments, interest, and monthly installments
-              </p>
             </div>
           </div>
           <button
@@ -177,6 +175,32 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                Interest Rate (% p.a.)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                value={interestRate}
+                onChange={e => setInterestRate(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 text-xs font-bold border border-slate-200 dark:border-slate-700 outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                Tenure (Months)
+              </label>
+              <input
+                type="number"
+                value={tenureMonths}
+                onChange={e => setTenureMonths(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 text-xs font-bold border border-slate-200 dark:border-slate-700 outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+          </div>
+
           <button
             type="submit"
             className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-md shadow-amber-600/20 flex items-center justify-center space-x-1.5 active:scale-98 transition-all"
@@ -190,20 +214,20 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
         <div className="p-5 flex-1 overflow-y-auto space-y-2.5">
           <div className="flex items-center justify-between pb-1">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Active Loans ({loans.length})
+              Active Loans ({activeLoans.length})
             </h4>
           </div>
 
-          {loans.length === 0 ? (
+          {activeLoans.length === 0 ? (
             <div className="py-12 text-center text-slate-400 space-y-2">
               <Landmark size={36} className="mx-auto text-slate-300 dark:text-slate-700" />
               <p className="text-xs font-semibold">No loans or EMIs logged.</p>
               <p className="text-[11px]">Add your personal, vehicle, or home loans above.</p>
             </div>
           ) : (
-            loans.map(l => (
+            activeLoans.map((l, idx) => (
               <div
-                key={l.id}
+                key={`loan_manage_${l.id}_${idx}`}
                 className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/70 space-y-2 group hover:border-amber-300 dark:hover:border-amber-700 transition-all"
               >
                 <div className="flex justify-between items-start">

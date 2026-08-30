@@ -1,4 +1,4 @@
-import { Account, CreditCard, Transaction, Investment, Loan, DebtRecord } from '../types';
+import { Account, CreditCard, Transaction, Investment, DebtRecord } from '../types';
 import { recalculateAllBalances, computeFinancialSummary } from './accountingEngine';
 
 export interface TestResult {

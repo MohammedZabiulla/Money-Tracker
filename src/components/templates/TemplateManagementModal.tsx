@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
-import { TransactionTemplate, TransactionType, SplitItem } from '../../types';
+import { TransactionTemplate, TransactionType } from '../../types';
 import { formatINR } from '../../lib/currency';
 import { exportTemplatesCsv, exportTemplatesJson } from '../../lib/storage';
-import { Category3DIcon, PaymentApp3DIcon, Bank3DIcon } from '../common/IconHelper';
+import { CustomSelect } from '../common/CustomSelect';
 import {
   X,
   Plus,
@@ -18,18 +18,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Check,
-  Tag,
-  FileText,
-  Clock,
   Sparkles,
-  CreditCard as CreditCardIcon,
-  Smartphone,
-  Layers,
-  ArrowDownLeft,
-  ArrowUpRight,
-  RefreshCw,
-  FolderPlus,
-  Split,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -283,23 +272,22 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-3xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-950/40">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
               <Zap className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">Transaction Templates</h2>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
-                  Cashew Style
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">Transaction Templates</h2>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-500/30">
+                  Standard Style
                 </span>
               </div>
-              <p className="text-xs text-slate-400">Preset favorite transactions for instant 1-tap entry and auto-filling</p>
             </div>
           </div>
 
@@ -317,7 +305,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
             <button
               type="button"
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              className="p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -338,15 +326,15 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
           {/* CREATE / EDIT FORM */}
           {isCreating ? (
             <form onSubmit={handleSaveTemplate} className="space-y-4 animate-in fade-in">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                  <Sparkles className="w-4 h-4 text-emerald-400" />
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                  <Sparkles className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
                   <span>{editingTemplate ? 'Edit Template' : 'Create New Template'}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsCreating(false)}
-                  className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-800"
+                  className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
                   Cancel
                 </button>
@@ -355,36 +343,36 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
               {/* Template Name & Type */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Template Name *</label>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Template Name *</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Daily Morning Coffee / Chai"
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Type</label>
-                  <select
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Type</label>
+                  <CustomSelect
                     value={formType}
-                    onChange={(e) => setFormType(e.target.value as TransactionType)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="EXPENSE">Expense (-)</option>
-                    <option value="INCOME">Income (+)</option>
-                    <option value="TRANSFER">Transfer (⇆)</option>
-                    <option value="INVESTMENT_CONTRIBUTION">Investment (SIP)</option>
-                  </select>
+                    onChange={(val) => setFormType(val as TransactionType)}
+                    options={[
+                      { value: 'EXPENSE', label: 'Expense (-)' },
+                      { value: 'INCOME', label: 'Income (+)' },
+                      { value: 'TRANSFER', label: 'Transfer (⇆)' },
+                      { value: 'INVESTMENT_CONTRIBUTION', label: 'Investment (SIP)' },
+                    ]}
+                  />
                 </div>
               </div>
 
               {/* Preset Amount & Merchant */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
-                    Preset Amount (₹) <span className="text-slate-500 font-normal">(Leave blank to prompt)</span>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                    Preset Amount (₹) <span className="text-slate-400 dark:text-slate-500 font-normal">(Leave blank to prompt)</span>
                   </label>
                   <input
                     type="number"
@@ -393,17 +381,17 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                     placeholder="e.g. 50"
                     value={formAmount}
                     onChange={(e) => setFormAmount(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Merchant / Payee Name</label>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Merchant / Payee Name</label>
                   <input
                     type="text"
                     placeholder="e.g. Starbucks / Swiggy / Metro"
                     value={formMerchantName}
                     onChange={(e) => setFormMerchantName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -411,38 +399,32 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
               {/* Category & Subcategory */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Category</label>
-                  <select
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Category</label>
+                  <CustomSelect
                     value={formCategoryId}
-                    onChange={(e) => {
-                      setFormCategoryId(e.target.value);
-                      const cat = categories.find(c => c.id === e.target.value);
+                    onChange={(val) => {
+                      setFormCategoryId(val);
+                      const cat = categories.find(c => c.id === val);
                       setFormSubcategory(cat?.subcategories[0] || '');
                       if (cat?.color) setFormColor(cat.color);
                     }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  >
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                    options={categories.map(c => ({ value: c.id, label: c.name }))}
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Subcategory</label>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Subcategory</label>
                   {(() => {
                     const activeCat = categories.find(c => c.id === formCategoryId);
                     const subList = activeCat?.subcategories || [];
                     return (
-                      <select
+                      <CustomSelect
                         value={formSubcategory}
-                        onChange={(e) => setFormSubcategory(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                      >
-                        <option value="">General</option>
-                        {subList.map((sub, i) => (
-                          <option key={i} value={sub}>{sub}</option>
-                        ))}
-                      </select>
+                        onChange={setFormSubcategory}
+                        options={[
+                          { value: '', label: 'General' },
+                          ...subList.map(sub => ({ value: sub, label: sub }))
+                        ]}
+                      />
                     );
                   })()}
                 </div>
@@ -451,96 +433,105 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
               {/* Account / Payment App */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Source Account</label>
-                  <select
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Source Account</label>
+                  <CustomSelect
                     value={formAccountId}
-                    onChange={(e) => {
-                      setFormAccountId(e.target.value);
-                      if (e.target.value) setFormCardId('');
+                    onChange={(val) => {
+                      setFormAccountId(val);
+                      if (val) setFormCardId('');
                     }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="">None / Any</option>
-                    {accounts.filter(a => !a.isDeleted).map(a => (
-                      <option key={a.id} value={a.id}>{a.name} ({a.institution})</option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: '', label: 'None / Any' },
+                      ...accounts.filter(a => !a.isDeleted).map(a => ({
+                        value: a.id,
+                        label: `${a.name} (${a.institution})`,
+                        sublabel: `${a.type} • Bal: ${formatINR(a.calculatedBalance)}`,
+                        rightText: formatINR(a.calculatedBalance),
+                        isBankAccount: true,
+                        bankTheme: a.institution || a.name || a.type,
+                      }))
+                    ]}
+                  />
                 </div>
 
                 {creditCards.length > 0 && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Or Credit Card</label>
-                    <select
+                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Or Credit Card</label>
+                    <CustomSelect
                       value={formCardId}
-                      onChange={(e) => {
-                        setFormCardId(e.target.value);
-                        if (e.target.value) setFormAccountId('');
+                      onChange={(val) => {
+                        setFormCardId(val);
+                        if (val) setFormAccountId('');
                       }}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                    >
-                      <option value="">None</option>
-                      {creditCards.filter(c => !c.isDeleted).map(c => (
-                        <option key={c.id} value={c.id}>{c.name} (••{c.lastFourDigits})</option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: '', label: 'None' },
+                        ...creditCards.filter(c => !c.isDeleted).map(c => ({
+                          value: c.id,
+                          label: `${c.name} (••${c.lastFourDigits})`,
+                          sublabel: `Due: ${formatINR(c.currentOutstanding)} • Avail: ${formatINR(Math.max(0, c.creditLimit - c.currentOutstanding))}`,
+                          rightText: `Due: ${formatINR(c.currentOutstanding)}`,
+                          isCreditCard: true,
+                          cardTheme: c.cardTheme,
+                          network: c.network,
+                        }))
+                      ]}
+                    />
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Payment App / Channel</label>
-                  <select
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Payment App / Channel</label>
+                  <CustomSelect
                     value={formPaymentAppId}
-                    onChange={(e) => setFormPaymentAppId(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="">Default / UPI</option>
-                    {paymentApps.map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
+                    onChange={setFormPaymentAppId}
+                    options={[
+                      { value: '', label: 'Default / UPI' },
+                      ...paymentApps.map(p => ({ value: p.id, label: p.name }))
+                    ]}
+                  />
                 </div>
               </div>
 
               {/* Notes & Tags */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Default Notes</label>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Default Notes</label>
                   <input
                     type="text"
                     placeholder="e.g. Breakfast on the way to office"
                     value={formNotes}
                     onChange={(e) => setFormNotes(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Tags (comma separated)</label>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Tags (comma separated)</label>
                   <input
                     type="text"
                     placeholder="e.g. Daily, Food, Routine"
                     value={formTags}
                     onChange={(e) => setFormTags(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               {/* Favorite Toggle */}
               <div className="flex items-center gap-3 pt-2">
-                <label className="flex items-center gap-2 text-xs font-medium text-slate-300 cursor-pointer select-none">
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={formIsFavorite}
                     onChange={(e) => setFormIsFavorite(e.target.checked)}
-                    className="rounded border-slate-700 text-emerald-500 focus:ring-0 focus:ring-offset-0 bg-slate-950"
+                    className="rounded border-slate-300 dark:border-slate-700 text-emerald-500 focus:ring-0 focus:ring-offset-0 bg-white dark:bg-slate-950"
                   />
-                  <Star className={`w-4 h-4 ${formIsFavorite ? 'fill-amber-400 text-amber-400' : 'text-slate-500'}`} />
+                  <Star className={`w-4 h-4 ${formIsFavorite ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
                   <span>Mark as Favorite (Shows in quick shortcuts)</span>
                 </label>
               </div>
 
               {/* Form Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsCreating(false)}
@@ -562,12 +553,12 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
               {/* Filter Tabs & Search */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 {/* Tabs */}
-                <div className="flex items-center bg-slate-950 border border-slate-800 p-1 rounded-xl overflow-x-auto text-xs">
+                <div className="flex items-center bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-1 rounded-xl overflow-x-auto text-xs">
                   <button
                     type="button"
                     onClick={() => setActiveTab('ALL')}
                     className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${
-                      activeTab === 'ALL' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
+                      activeTab === 'ALL' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
                     All ({templates.length})
@@ -576,7 +567,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                     type="button"
                     onClick={() => setActiveTab('FAVORITES')}
                     className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-                      activeTab === 'FAVORITES' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'text-slate-400 hover:text-slate-200'
+                      activeTab === 'FAVORITES' ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
                     <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
@@ -586,7 +577,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                     type="button"
                     onClick={() => setActiveTab('EXPENSE')}
                     className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${
-                      activeTab === 'EXPENSE' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-slate-200'
+                      activeTab === 'EXPENSE' ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
                     Expenses
@@ -595,7 +586,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                     type="button"
                     onClick={() => setActiveTab('INCOME')}
                     className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors ${
-                      activeTab === 'INCOME' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-slate-200'
+                      activeTab === 'INCOME' ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
                     Income
@@ -604,19 +595,19 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
 
                 {/* Search Bar */}
                 <div className="relative flex-1 sm:max-w-xs">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Search templates..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                   />
                   {searchQuery && (
                     <button
                       type="button"
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-900 dark:hover:text-white"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -626,12 +617,12 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
 
               {/* Template Cards Grid */}
               {filteredTemplates.length === 0 ? (
-                <div className="bg-slate-950/50 border border-slate-800/80 rounded-2xl p-8 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mx-auto text-slate-400">
+                <div className="bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-8 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center mx-auto text-slate-500 dark:text-slate-400">
                     <Zap className="w-6 h-6" />
                   </div>
-                  <p className="text-sm font-semibold text-slate-300">No templates found</p>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-300">No templates found</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
                     {searchQuery ? 'No templates match your search query.' : 'Create quick templates for your recurring daily routines (Chai, Metro, Groceries, Rent)!'}
                   </p>
                   <button
@@ -652,7 +643,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                     return (
                       <div
                         key={tmpl.id}
-                        className="bg-slate-950/70 border border-slate-800/90 hover:border-slate-700 rounded-2xl p-4 flex flex-col justify-between space-y-3 transition-all hover:shadow-lg group"
+                        className="bg-white dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/90 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-4 flex flex-col justify-between space-y-3 transition-all hover:shadow-md group"
                       >
                         {/* Top Row: Icon, Title, Favorite & Actions */}
                         <div className="flex items-start justify-between gap-3">
@@ -665,16 +656,16 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
-                                <h3 className="text-sm font-bold text-white line-clamp-1">{tmpl.name}</h3>
+                                <h3 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-1">{tmpl.name}</h3>
                                 {tmpl.isFavorite && (
                                   <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
                                 )}
                               </div>
-                              <div className="flex items-center gap-1.5 text-xs text-slate-400 flex-wrap">
+                              <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
                                 <span>{tmpl.categoryName || 'General'}</span>
                                 {tmpl.subcategory && (
                                   <>
-                                    <span className="text-slate-600">•</span>
+                                    <span className="text-slate-400 dark:text-slate-600">•</span>
                                     <span className="text-slate-500">{tmpl.subcategory}</span>
                                   </>
                                 )}
@@ -687,7 +678,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                               type="button"
                               onClick={() => toggleFavoriteTemplate(tmpl.id)}
                               title={tmpl.isFavorite ? 'Remove from favorites' : 'Mark as favorite'}
-                              className="p-1.5 text-slate-400 hover:text-amber-400 rounded-lg hover:bg-slate-800"
+                              className="p-1.5 text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
                             >
                               <Star className={`w-4 h-4 ${tmpl.isFavorite ? 'fill-amber-400 text-amber-400' : ''}`} />
                             </button>
@@ -695,7 +686,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                               type="button"
                               onClick={() => openEditForm(tmpl)}
                               title="Edit template"
-                              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+                              className="p-1.5 text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -703,7 +694,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                               type="button"
                               onClick={() => handleDuplicate(tmpl)}
                               title="Duplicate"
-                              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+                              className="p-1.5 text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
                             >
                               <Copy className="w-3.5 h-3.5" />
                             </button>
@@ -711,7 +702,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                               type="button"
                               onClick={() => setDeleteConfirmId(tmpl.id)}
                               title="Delete template"
-                              className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800"
+                              className="p-1.5 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -719,13 +710,13 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                         </div>
 
                         {/* Mid Row: Amount badge & metadata */}
-                        <div className="bg-slate-900/90 rounded-xl p-2.5 flex items-center justify-between border border-slate-800/60">
+                        <div className="bg-slate-50 dark:bg-slate-900/90 rounded-xl p-2.5 flex items-center justify-between border border-slate-200 dark:border-slate-800/60">
                           <div>
-                            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 block">
                               Preset Amount
                             </span>
                             <span className={`text-base font-extrabold ${
-                              isExpense ? 'text-rose-400' : isIncome ? 'text-emerald-400' : 'text-blue-400'
+                              isExpense ? 'text-rose-600 dark:text-rose-400' : isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'
                             }`}>
                               {tmpl.amount !== undefined && tmpl.amount > 0 ? (
                                 `${isExpense ? '-' : isIncome ? '+' : ''}${formatINR(tmpl.amount)}`
@@ -736,41 +727,41 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                           </div>
 
                           <div className="text-right text-xs">
-                            <span className="text-[10px] text-slate-400 block">Used</span>
-                            <span className="font-semibold text-slate-300">{tmpl.usageCount || 0} times</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 block">Used</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">{tmpl.usageCount || 0} times</span>
                           </div>
                         </div>
 
                         {/* Details Pills */}
-                        <div className="flex items-center gap-2 text-[11px] text-slate-400 flex-wrap">
+                        <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-400 flex-wrap">
                           {tmpl.merchantName && (
-                            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
                               🏪 {tmpl.merchantName}
                             </span>
                           )}
                           {tmpl.accountName && (
-                            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
                               🏦 {tmpl.accountName}
                             </span>
                           )}
                           {tmpl.creditCardName && (
-                            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
                               💳 {tmpl.creditCardName}
                             </span>
                           )}
                           {tmpl.paymentAppName && (
-                            <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
                               ⚡ {tmpl.paymentAppName}
                             </span>
                           )}
                         </div>
 
                         {/* Action Buttons */}
-                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-900">
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 dark:border-slate-900">
                           <button
                             type="button"
                             onClick={() => handleApplyToForm(tmpl)}
-                            className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                            className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
                           >
                             <span>Fill Form</span>
                             <ArrowRight className="w-3.5 h-3.5" />
@@ -778,7 +769,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                           <button
                             type="button"
                             onClick={() => handleDirectRecord(tmpl)}
-                            className="w-full py-2 px-3 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-950 flex items-center justify-center gap-1.5 transition-colors"
+                            className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-950/20 flex items-center justify-center gap-1.5 transition-colors"
                           >
                             <Zap className="w-3.5 h-3.5 fill-current" />
                             <span>1-Tap Record</span>
@@ -787,13 +778,13 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
 
                         {/* Delete Confirmation Overlay */}
                         {deleteConfirmId === tmpl.id && (
-                          <div className="p-3 bg-rose-950/80 border border-rose-800 rounded-xl flex items-center justify-between text-xs animate-in fade-in">
-                            <span className="text-rose-200 font-medium">Delete this template?</span>
+                          <div className="p-3 bg-rose-50 dark:bg-rose-950/80 border border-rose-200 dark:border-rose-800 rounded-xl flex items-center justify-between text-xs animate-in fade-in">
+                            <span className="text-rose-700 dark:text-rose-200 font-medium">Delete this template?</span>
                             <div className="flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => setDeleteConfirmId(null)}
-                                className="px-2 py-1 rounded bg-slate-800 text-slate-300 hover:text-white"
+                                className="px-2 py-1 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-transparent"
                               >
                                 Cancel
                               </button>
@@ -819,13 +810,13 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
               )}
 
               {/* Template Import/Export Footer */}
-              <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-300">Backup & Export:</span>
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-400">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">Backup & Export:</span>
                   <button
                     type="button"
                     onClick={() => exportTemplatesCsv(templates)}
-                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 font-medium transition-colors"
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-1 font-medium transition-colors border border-slate-200 dark:border-transparent"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>CSV</span>
@@ -833,7 +824,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                   <button
                     type="button"
                     onClick={() => exportTemplatesJson(templates)}
-                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 font-medium transition-colors"
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-1 font-medium transition-colors border border-slate-200 dark:border-transparent"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>JSON</span>
@@ -841,7 +832,7 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                 </div>
 
                 <div>
-                  <label className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1.5 font-medium cursor-pointer transition-colors">
+                  <label className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-1.5 font-medium cursor-pointer transition-colors border border-slate-200 dark:border-transparent">
                     <Upload className="w-3.5 h-3.5" />
                     <span>Import Templates (.json)</span>
                     <input

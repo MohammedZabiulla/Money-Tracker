@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Transaction, TransactionType, SplitItem } from '../../types';
-import { IconHelper, Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
+import { Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
 import { CategoryManagementModal } from '../categories/CategoryManagementModal';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { CustomDatePicker } from '../common/CustomDatePicker';
@@ -12,25 +12,13 @@ import { formatINR, CURRENCY_RATES } from '../../lib/currency';
 import {
   X,
   Check,
-  Calendar,
-  Clock,
-  Tag,
-  CreditCard,
-  Building,
-  ArrowRightLeft,
-  Smartphone,
-  FileText,
-  DollarSign,
-  Layers,
-  Sparkles,
   Settings2,
   Plus,
   Split,
   Target,
   Trash2,
-  Globe,
 } from 'lucide-react';
-import { POPULAR_TAGS } from '../../lib/constants';
+import { POPULAR_TAGS, CARD_THEMES } from '../../lib/constants';
 
 interface EditTransactionModalProps {
   transaction: Transaction | null;
@@ -63,6 +51,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [selectedCreditCardId, setSelectedCreditCardId] = useState<string>('');
   const [toAccountId, setToAccountId] = useState<string>('');
+  const [selectedToCardId, setSelectedToCardId] = useState<string>('');
   const [paymentAppId, setPaymentAppId] = useState<string>('');
   const [selectedGoalId, setSelectedGoalId] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -73,7 +62,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const [showAccountCardModal, setShowAccountCardModal] = useState<boolean>(false);
   const [accountCardDefaultTab, setAccountCardDefaultTab] = useState<'BANK' | 'CARD' | 'WALLET'>('BANK');
 
-  // Cashew features
+  // Advanced features
   const [isSplitMode, setIsSplitMode] = useState<boolean>(false);
   const [splits, setSplits] = useState<SplitItem[]>([]);
 
@@ -86,18 +75,25 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       setMerchantName(transaction.merchantName || '');
       setCategoryId(transaction.categoryId || '');
       setSubcategory(transaction.subcategory || '');
-      if (transaction.creditCardId) {
+      if (transaction.creditCardId && transaction.type === 'CARD_PAYMENT') {
+        setSelectedCreditCardId(transaction.creditCardId);
+        setSelectedAccountId(transaction.accountId || '');
+      } else if (transaction.creditCardId) {
         setSelectedSourceType('CARD');
         setSelectedCreditCardId(transaction.creditCardId);
+        setSelectedAccountId('');
       } else {
         setSelectedSourceType('ACCOUNT');
         setSelectedAccountId(transaction.accountId || '');
+        setSelectedCreditCardId('');
       }
       setToAccountId(transaction.toAccountId || '');
+      setSelectedToCardId(transaction.toCreditCardId || '');
       setPaymentAppId(transaction.paymentAppId || '');
       setSelectedGoalId(transaction.goalId || '');
       setNotes(transaction.notes || '');
       setTags(transaction.tags || []);
+      setMerchantName(transaction.merchantName || transaction.debtPersonName || '');
       setIsSplitMode(!!(transaction.splits && transaction.splits.length > 0));
       setSplits(transaction.splits || []);
     }
@@ -191,6 +187,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           a.calculatedBalance >= 0
             ? 'text-emerald-600 dark:text-emerald-400'
             : 'text-rose-500',
+        isBankAccount: true,
+        bankTheme: a.institution || a.name || a.type,
       };
     });
   }, [activeAccounts]);
@@ -244,6 +242,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
     const selectedAcc = activeAccounts.find(a => a.id === selectedAccountId);
     const selectedCc = activeCards.find(c => c.id === selectedCreditCardId);
     const selectedToAcc = activeAccounts.find(a => a.id === toAccountId);
+    const selectedToCard = activeCards.find(c => c.id === selectedToCardId);
     const selectedApp = paymentApps.find(p => p.id === paymentAppId);
 
     const updates: Partial<Transaction> = {
@@ -251,9 +250,10 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       amount: numAmount,
       date,
       time,
-      merchantName: merchantName.trim() || undefined,
-      categoryId: isSplitMode && splits.length > 0 ? splits[0].categoryId : (categoryId || undefined),
-      categoryName: isSplitMode && splits.length > 0 ? categories.find(c => c.id === splits[0].categoryId)?.name : (currentCategory?.name || undefined),
+      merchantName: type === 'MONEY_LENT' || type === 'MONEY_BORROWED' ? undefined : (merchantName.trim() || undefined),
+      debtPersonName: type === 'MONEY_LENT' || type === 'MONEY_BORROWED' ? (merchantName.trim() || undefined) : undefined,
+      categoryId: (type === 'TRANSFER' || type === 'CARD_PAYMENT' || type === 'MONEY_LENT' || type === 'MONEY_BORROWED') ? 'cat_transfer' : (isSplitMode && splits.length > 0 ? splits[0].categoryId : (categoryId || undefined)),
+      categoryName: type === 'CARD_PAYMENT' ? 'Credit Card Payment' : type === 'TRANSFER' ? 'Transfer' : type === 'MONEY_LENT' ? 'Money Lent' : type === 'MONEY_BORROWED' ? 'Money Borrowed' : (isSplitMode && splits.length > 0 ? categories.find(c => c.id === splits[0].categoryId)?.name : (currentCategory?.name || undefined)),
       subcategory: subcategory || undefined,
       paymentAppId: paymentAppId || undefined,
       paymentAppName: selectedApp?.name || undefined,
@@ -270,19 +270,32 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
     }
 
     if (type === 'TRANSFER') {
+      updates.accountId = selectedAccountId || undefined;
+      updates.accountName = selectedAcc?.name;
+      updates.creditCardId = selectedCreditCardId || undefined;
+      updates.creditCardName = selectedCc?.name;
+      updates.toAccountId = toAccountId || undefined;
+      updates.toAccountName = selectedToAcc?.name;
+      updates.toCreditCardId = selectedToCardId || undefined;
+      updates.toCreditCardName = selectedToCard?.name;
+    } else if (type === 'CARD_PAYMENT') {
       updates.accountId = selectedAccountId;
       updates.accountName = selectedAcc?.name;
-      updates.toAccountId = toAccountId;
-      updates.toAccountName = selectedToAcc?.name;
-      updates.creditCardId = undefined;
-      updates.creditCardName = undefined;
-    } else if (selectedSourceType === 'CARD') {
+      updates.creditCardId = selectedCreditCardId;
+      updates.creditCardName = selectedCc?.name;
+      updates.toAccountId = undefined;
+      updates.toAccountName = undefined;
+      updates.toCreditCardId = undefined;
+      updates.toCreditCardName = undefined;
+    } else if (selectedSourceType === 'CARD' && type === 'EXPENSE') {
       updates.creditCardId = selectedCreditCardId;
       updates.creditCardName = selectedCc?.name;
       updates.accountId = undefined;
       updates.accountName = undefined;
       updates.toAccountId = undefined;
       updates.toAccountName = undefined;
+      updates.toCreditCardId = undefined;
+      updates.toCreditCardName = undefined;
     } else {
       updates.accountId = selectedAccountId;
       updates.accountName = selectedAcc?.name;
@@ -290,6 +303,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       updates.creditCardName = undefined;
       updates.toAccountId = undefined;
       updates.toAccountName = undefined;
+      updates.toCreditCardId = undefined;
+      updates.toCreditCardName = undefined;
     }
 
     updateTransaction(transaction.id, updates);
@@ -297,7 +312,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-[200] bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6">
         {/* Header */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
@@ -312,22 +327,33 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               <p className="text-[11px] text-slate-500">Update amount, category, date or account</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              type="submit"
+              form="edit-transaction-form"
+              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all flex items-center space-x-1"
+            >
+              <Check size={14} />
+              <span>Save</span>
+            </button>
+            <button
+              onClick={onClose}
+              type="button"
+              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-full"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSave} className="p-5 overflow-y-auto space-y-4 flex-1">
+        <form id="edit-transaction-form" onSubmit={handleSave} className="p-5 overflow-y-auto space-y-4 flex-1">
           {/* Transaction Type Segmented Switch */}
-          <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl">
             <button
               type="button"
               onClick={() => setType('EXPENSE')}
-              className={`py-2 text-xs font-bold rounded-xl transition-all ${
+              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
                 type === 'EXPENSE'
                   ? 'bg-rose-500 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -338,7 +364,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             <button
               type="button"
               onClick={() => setType('INCOME')}
-              className={`py-2 text-xs font-bold rounded-xl transition-all ${
+              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
                 type === 'INCOME'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -349,13 +375,46 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             <button
               type="button"
               onClick={() => setType('TRANSFER')}
-              className={`py-2 text-xs font-bold rounded-xl transition-all ${
+              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
                 type === 'TRANSFER'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
               Transfer
+            </button>
+            <button
+              type="button"
+              onClick={() => setType('CARD_PAYMENT')}
+              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
+                type === 'CARD_PAYMENT'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Card Bill
+            </button>
+            <button
+              type="button"
+              onClick={() => setType('MONEY_LENT')}
+              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
+                type === 'MONEY_LENT'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Lend
+            </button>
+            <button
+              type="button"
+              onClick={() => setType('MONEY_BORROWED')}
+              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
+                type === 'MONEY_BORROWED'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Borrow
             </button>
           </div>
 
@@ -431,23 +490,19 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               </div>
 
               <div className="space-y-2">
-                {splits.map(split => (
+                {splits.map((split, idx) => (
                   <div
-                    key={split.id}
+                    key={`edit_split_${split.id || 's'}_${idx}`}
                     className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-purple-200/60 dark:border-slate-700 space-y-2"
                   >
                     <div className="flex items-center space-x-2">
-                      <select
-                        value={split.categoryId}
-                        onChange={e => handleUpdateSplit(split.id, { categoryId: e.target.value })}
-                        className="flex-1 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-xs font-semibold"
-                      >
-                        {categories.map(c => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex-1">
+                        <CustomSelect
+                          value={split.categoryId}
+                          onChange={(val) => handleUpdateSplit(split.id, { categoryId: val })}
+                          options={categories.map(c => ({ value: c.id, label: c.name }))}
+                        />
+                      </div>
 
                       <div className="relative w-28">
                         <span className="absolute left-2.5 top-1.5 text-xs text-slate-400 font-bold">₹</span>
@@ -511,13 +566,13 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           {/* Merchant / Payee */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
-              {type === 'INCOME' ? 'Source / Payer' : type === 'TRANSFER' ? 'Transfer Description' : 'Merchant / Payee'}
+              {type === 'INCOME' ? 'Source / Payer' : type === 'TRANSFER' ? 'Transfer Description' : type === 'MONEY_LENT' ? 'Lent To (Person Name)' : type === 'MONEY_BORROWED' ? 'Borrowed From (Person Name)' : type === 'CARD_PAYMENT' ? 'Card Bill Note / Description' : 'Merchant / Payee'}
             </label>
             <input
               type="text"
               value={merchantName}
               onChange={e => setMerchantName(e.target.value)}
-              placeholder={type === 'INCOME' ? 'e.g. Company Name, Client' : 'e.g. Swiggy, Amazon, Uber, Shell'}
+              placeholder={type === 'MONEY_LENT' || type === 'MONEY_BORROWED' ? 'e.g. John Doe, Rahul' : type === 'INCOME' ? 'e.g. Company Name, Client' : 'e.g. Swiggy, Amazon, Uber, Shell'}
               className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-emerald-500"
             />
           </div>
@@ -579,9 +634,9 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                     Subcategory:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {currentCategory.subcategories.map(sub => (
+                    {currentCategory.subcategories.map((sub, idx) => (
                       <button
-                        key={sub}
+                        key={`edit_sub_${sub}_${idx}`}
                         type="button"
                         onClick={() => setSubcategory(sub === subcategory ? '' : sub)}
                         className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
@@ -601,30 +656,190 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
           {/* Account / Card Selection */}
           {type === 'TRANSFER' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-3">
               <div>
-                <CustomSelect
-                  label="From Account"
-                  title="Select Source Account"
-                  value={selectedAccountId}
-                  onChange={val => setSelectedAccountId(val)}
-                  options={accountOptions}
-                  placeholder="Select Source Account"
-                  searchable={true}
-                  searchPlaceholder="Search bank or wallet..."
-                />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    From Account / Credit Card
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountCardDefaultTab('BANK');
+                      setShowAccountCardModal(true);
+                    }}
+                    className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center space-x-1"
+                  >
+                    <Plus size={12} />
+                    <span>Add Bank / Card</span>
+                  </button>
+                </div>
+                <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1">
+                  {activeAccounts.map(acc => {
+                    const isSelected = selectedAccountId === acc.id && !selectedCreditCardId;
+                    return (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAccountId(acc.id);
+                          setSelectedCreditCardId('');
+                        }}
+                        className={`px-3 py-2 rounded-2xl border text-xs font-medium whitespace-nowrap flex items-center space-x-2.5 transition-all shrink-0 ${
+                          isSelected
+                            ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 font-bold shadow-md ring-2 ring-emerald-500/30'
+                            : 'border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                        }`}
+                      >
+                        <Bank3DIcon
+                          institution={acc.institution}
+                          type={acc.type}
+                          color={acc.color}
+                          size="sm"
+                          glow={isSelected}
+                        />
+                        <div className="text-left">
+                          <span className="block leading-tight">{acc.name}</span>
+                          <span className={`text-[10px] font-semibold ${isSelected ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500'}`}>
+                            Bal: {formatINR(acc.calculatedBalance)}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {activeCards.map(card => {
+                    const isSelected = selectedCreditCardId === card.id;
+                    const theme = CARD_THEMES.find(t => t.id === card.cardTheme) || CARD_THEMES[0];
+                    return (
+                      <button
+                        key={card.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCreditCardId(card.id);
+                          setSelectedAccountId('');
+                        }}
+                        className={`px-3 py-2 rounded-2xl border text-xs font-medium whitespace-nowrap flex items-center space-x-2.5 transition-all shrink-0 ${
+                          isSelected
+                            ? `border-purple-500 bg-gradient-to-r ${theme.gradient} text-white font-bold shadow-lg ring-2 ring-purple-500/40`
+                            : 'border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                        }`}
+                      >
+                        <Bank3DIcon
+                          institution={card.issuer}
+                          type="CREDIT_CARD"
+                          color={card.color || '#9333ea'}
+                          size="sm"
+                          glow={isSelected}
+                        />
+                        <div className="text-left">
+                          <span className="block leading-tight">{card.name}</span>
+                          <span className={`text-[10px] font-mono ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                            ••{card.lastFourDigits} • Due: {formatINR(card.currentOutstanding)}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5 block">
+                  To Destination Account / Credit Card
+                </label>
+                <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1">
+                  {activeAccounts.filter(a => a.id !== selectedAccountId).map(acc => {
+                    const isSelected = toAccountId === acc.id;
+                    return (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        onClick={() => {
+                          setToAccountId(acc.id);
+                          setSelectedToCardId('');
+                        }}
+                        className={`px-3 py-2 rounded-2xl border text-xs font-medium whitespace-nowrap flex items-center space-x-2.5 transition-all shrink-0 ${
+                          isSelected
+                            ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 font-bold shadow-md ring-2 ring-emerald-500/30'
+                            : 'border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                        }`}
+                      >
+                        <Bank3DIcon
+                          institution={acc.institution}
+                          type={acc.type}
+                          color={acc.color}
+                          size="sm"
+                          glow={isSelected}
+                        />
+                        <div className="text-left">
+                          <span className="block leading-tight">{acc.name}</span>
+                          <span className={`text-[10px] font-semibold ${isSelected ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500'}`}>
+                            Bal: {formatINR(acc.calculatedBalance)}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {activeCards.filter(c => c.id !== selectedCreditCardId).map(card => {
+                    const isSelected = selectedToCardId === card.id;
+                    const theme = CARD_THEMES.find(t => t.id === card.cardTheme) || CARD_THEMES[0];
+                    return (
+                      <button
+                        key={card.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedToCardId(card.id);
+                          setToAccountId('');
+                        }}
+                        className={`px-3 py-2 rounded-2xl border text-xs font-medium whitespace-nowrap flex items-center space-x-2.5 transition-all shrink-0 ${
+                          isSelected
+                            ? `border-purple-500 bg-gradient-to-r ${theme.gradient} text-white font-bold shadow-lg ring-2 ring-purple-500/40`
+                            : 'border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                        }`}
+                      >
+                        <Bank3DIcon
+                          institution={card.issuer}
+                          type="CREDIT_CARD"
+                          color={card.color || '#9333ea'}
+                          size="sm"
+                          glow={isSelected}
+                        />
+                        <div className="text-left">
+                          <span className="block leading-tight">{card.name}</span>
+                          <span className={`text-[10px] font-mono ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                            ••{card.lastFourDigits} • Due: {formatINR(card.currentOutstanding)}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : type === 'CARD_PAYMENT' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
                 <CustomSelect
-                  label="To Account"
-                  title="Select Destination Account"
-                  value={toAccountId}
-                  onChange={val => setToAccountId(val)}
-                  options={accountOptions.filter(a => a.value !== selectedAccountId)}
-                  placeholder="Select Destination Account"
+                  label="Pay From Bank Account"
+                  title="Select Bank Account"
+                  value={selectedAccountId}
+                  onChange={val => setSelectedAccountId(val)}
+                  options={accountOptions}
+                  placeholder="Select Bank Account"
                   searchable={true}
-                  searchPlaceholder="Search destination..."
+                />
+              </div>
+              <div>
+                <CustomSelect
+                  label="Pay To Credit Card"
+                  title="Select Credit Card"
+                  value={selectedCreditCardId}
+                  onChange={val => setSelectedCreditCardId(val)}
+                  options={creditCardOptions}
+                  placeholder="Select Credit Card"
+                  searchable={true}
                 />
               </div>
             </div>
@@ -781,18 +996,17 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 <Target size={12} className="text-emerald-600 dark:text-emerald-400" />
                 <span>Link to Savings Goal</span>
               </label>
-              <select
+              <CustomSelect
                 value={selectedGoalId}
-                onChange={e => setSelectedGoalId(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs text-slate-900 dark:text-white outline-none focus:border-emerald-500"
-              >
-                <option value="">No goal linked</option>
-                {goals.map(g => (
-                  <option key={g.id} value={g.id}>
-                    {g.name} ({formatINR(g.currentAmount)} / {formatINR(g.targetAmount)})
-                  </option>
-                ))}
-              </select>
+                onChange={setSelectedGoalId}
+                options={[
+                  { value: '', label: 'No goal linked' },
+                  ...goals.map(g => ({
+                    value: g.id,
+                    label: `${g.name} (${formatINR(g.currentAmount)} / ${formatINR(g.targetAmount)})`
+                  }))
+                ]}
+              />
             </div>
           )}
 
@@ -816,11 +1030,11 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               Tags
             </label>
             <div className="flex flex-wrap gap-1.5 mb-2">
-              {POPULAR_TAGS.map(tag => {
+              {POPULAR_TAGS.map((tag, idx) => {
                 const isSelected = tags.includes(tag);
                 return (
                   <button
-                    key={tag}
+                    key={`edit_tag_${tag}_${idx}`}
                     type="button"
                     onClick={() => toggleTag(tag)}
                     className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium transition-all ${
@@ -856,17 +1070,6 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 Add
               </button>
             </div>
-          </div>
-
-          {/* Save Button */}
-          <div className="pt-2">
-            <button
-              type="submit"
-              className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center space-x-2"
-            >
-              <Check size={18} />
-              <span>Save Changes</span>
-            </button>
           </div>
         </form>
       </div>

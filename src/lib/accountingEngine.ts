@@ -59,10 +59,18 @@ export function recalculateAllBalances(
 } {
   // Map opening balances
   const accountMap = new Map<string, number>();
-  initialAccounts.forEach(acc => accountMap.set(acc.id, acc.openingBalance || 0));
+  const accountNameMap = new Map<string, string>();
+  initialAccounts.forEach(acc => {
+    accountMap.set(acc.id, acc.openingBalance || 0);
+    if (acc.name) accountNameMap.set(acc.name.toLowerCase().trim(), acc.id);
+  });
 
   const cardMap = new Map<string, number>();
-  initialCards.forEach(card => cardMap.set(card.id, card.openingBalance || 0));
+  const cardNameMap = new Map<string, string>();
+  initialCards.forEach(card => {
+    cardMap.set(card.id, card.openingBalance || 0);
+    if (card.name) cardNameMap.set(card.name.toLowerCase().trim(), card.id);
+  });
 
   const loanPrincipalMap = new Map<string, number>();
   initialLoans.forEach(loan => loanPrincipalMap.set(loan.id, loan.principalAmount || 0));
@@ -73,74 +81,174 @@ export function recalculateAllBalances(
   // Sort active non-deleted transactions chronologically
   const activeTx = transactions
     .filter(t => !t.isDeleted)
-    .sort((a, b) => a.timestamp - b.timestamp);
+    .sort((a, b) => {
+      const dateA = a.date || '';
+      const dateB = b.date || '';
+      
+      const dateCompare = dateA.localeCompare(dateB);
+      if (dateCompare !== 0) return dateCompare;
+      
+      const timeA = a.time || '00:00';
+      const timeB = b.time || '00:00';
+      const timeCompare = timeA.localeCompare(timeB);
+      if (timeCompare !== 0) return timeCompare;
+      
+      const tsA = a.timestamp || 0;
+      const tsB = b.timestamp || 0;
+      if (tsA && tsB && tsA !== tsB) return tsA - tsB;
+      
+      return 0;
+    });
 
   // Apply ledger mutations
   for (const tx of activeTx) {
-    const amount = Number(tx.amount) || 0;
+    const amount = Math.abs(Number(tx.amount) || 0);
     if (amount <= 0) continue;
+
+    // Resolve effective Card and Account IDs (with name-based fallback and cross-mapping)
+    let effectiveCardId = (tx.creditCardId && cardMap.has(tx.creditCardId))
+      ? tx.creditCardId
+      : (tx.creditCardId && cardNameMap.has(tx.creditCardId.toLowerCase().trim()))
+        ? cardNameMap.get(tx.creditCardId.toLowerCase().trim())
+        : (tx.creditCardName ? cardNameMap.get(tx.creditCardName.toLowerCase().trim()) : undefined);
+
+    if (!effectiveCardId && tx.accountId && cardMap.has(tx.accountId)) {
+      effectiveCardId = tx.accountId;
+    }
+    if (!effectiveCardId && tx.accountName && cardNameMap.has(tx.accountName.toLowerCase().trim())) {
+      effectiveCardId = cardNameMap.get(tx.accountName.toLowerCase().trim());
+    }
+
+    let effectiveAccountId = (tx.accountId && accountMap.has(tx.accountId))
+      ? tx.accountId
+      : (tx.accountId && accountNameMap.has(tx.accountId.toLowerCase().trim()))
+        ? accountNameMap.get(tx.accountId.toLowerCase().trim())
+        : (tx.accountName ? accountNameMap.get(tx.accountName.toLowerCase().trim()) : undefined);
+
+    if (!effectiveAccountId && tx.creditCardId && accountMap.has(tx.creditCardId)) {
+      effectiveAccountId = tx.creditCardId;
+    }
+    if (!effectiveAccountId && tx.creditCardName && accountNameMap.has(tx.creditCardName.toLowerCase().trim())) {
+      effectiveAccountId = accountNameMap.get(tx.creditCardName.toLowerCase().trim());
+    }
+
+    let effectiveToAccountId = (tx.toAccountId && accountMap.has(tx.toAccountId))
+      ? tx.toAccountId
+      : (tx.toAccountId && accountNameMap.has(tx.toAccountId.toLowerCase().trim()))
+        ? accountNameMap.get(tx.toAccountId.toLowerCase().trim())
+        : (tx.toAccountName ? accountNameMap.get(tx.toAccountName.toLowerCase().trim()) : undefined);
+
+    if (!effectiveToAccountId && tx.toCreditCardId && accountMap.has(tx.toCreditCardId)) {
+      effectiveToAccountId = tx.toCreditCardId;
+    }
+    if (!effectiveToAccountId && tx.toCreditCardName && accountNameMap.has(tx.toCreditCardName.toLowerCase().trim())) {
+      effectiveToAccountId = accountNameMap.get(tx.toCreditCardName.toLowerCase().trim());
+    }
+
+    let effectiveToCardId = (tx.toCreditCardId && cardMap.has(tx.toCreditCardId))
+      ? tx.toCreditCardId
+      : (tx.toCreditCardId && cardNameMap.has(tx.toCreditCardId.toLowerCase().trim()))
+        ? cardNameMap.get(tx.toCreditCardId.toLowerCase().trim())
+        : (tx.toCreditCardName ? cardNameMap.get(tx.toCreditCardName.toLowerCase().trim()) : undefined);
+
+    if (!effectiveToCardId && tx.toAccountId && cardMap.has(tx.toAccountId)) {
+      effectiveToCardId = tx.toAccountId;
+    }
+    if (!effectiveToCardId && tx.toAccountName && cardNameMap.has(tx.toAccountName.toLowerCase().trim())) {
+      effectiveToCardId = cardNameMap.get(tx.toAccountName.toLowerCase().trim());
+    }
 
     switch (tx.type) {
       case 'EXPENSE':
-        if (tx.creditCardId && cardMap.has(tx.creditCardId)) {
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
           // Card purchase increases card outstanding liability
-          const current = cardMap.get(tx.creditCardId)!;
-          cardMap.set(tx.creditCardId, safeAdd(current, amount));
-        } else if (tx.accountId && accountMap.has(tx.accountId)) {
+          const current = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeAdd(current, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
           // Bank/Cash expense decreases account balance
-          const current = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeSubtract(current, amount));
+          const current = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeSubtract(current, amount));
         }
         break;
 
       case 'INCOME':
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const current = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeAdd(current, amount));
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          // Income/refund to credit card decreases liability
+          const current = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeSubtract(current, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const current = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeAdd(current, amount));
         }
         break;
 
       case 'TRANSFER':
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const srcBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeSubtract(srcBal, amount));
+        // Handle source side of transfer
+        if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const srcBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeSubtract(srcBal, amount));
+        } else if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          // Transfer FROM credit card (e.g. cash advance) increases liability
+          const srcBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeAdd(srcBal, amount));
         }
-        if (tx.toAccountId && accountMap.has(tx.toAccountId)) {
-          const destBal = accountMap.get(tx.toAccountId)!;
-          accountMap.set(tx.toAccountId, safeAdd(destBal, amount));
+
+        // Handle destination side of transfer
+        if (effectiveToAccountId && accountMap.has(effectiveToAccountId)) {
+          const destBal = accountMap.get(effectiveToAccountId)!;
+          accountMap.set(effectiveToAccountId, safeAdd(destBal, amount));
+        } else if (effectiveToCardId && cardMap.has(effectiveToCardId)) {
+          // Transfer TO credit card decreases liability
+          const destBal = cardMap.get(effectiveToCardId)!;
+          cardMap.set(effectiveToCardId, safeSubtract(destBal, amount));
+        } else if (effectiveCardId && !effectiveToAccountId && !effectiveToCardId && cardMap.has(effectiveCardId)) {
+          // Fallback if destination was set on creditCardId
+          const destBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeSubtract(destBal, amount));
         }
         break;
 
       case 'CARD_PAYMENT':
         // Source bank pays credit card -> bank decreases, card liability decreases
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeSubtract(bankBal, amount));
+        const payBankId = effectiveAccountId || effectiveToAccountId;
+        if (payBankId && accountMap.has(payBankId)) {
+          const bankBal = accountMap.get(payBankId)!;
+          accountMap.set(payBankId, safeSubtract(bankBal, amount));
         }
-        if (tx.creditCardId && cardMap.has(tx.creditCardId)) {
-          const cardBal = cardMap.get(tx.creditCardId)!;
-          cardMap.set(tx.creditCardId, Math.max(0, safeSubtract(cardBal, amount)));
+        const payCardId = effectiveToCardId || effectiveCardId;
+        if (payCardId && cardMap.has(payCardId)) {
+          const cardBal = cardMap.get(payCardId)!;
+          cardMap.set(payCardId, safeSubtract(cardBal, amount));
         }
         break;
 
       case 'INVESTMENT_CONTRIBUTION':
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeSubtract(bankBal, amount));
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          const cardBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeAdd(cardBal, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const bankBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeSubtract(bankBal, amount));
         }
         break;
 
       case 'INVESTMENT_WITHDRAWAL':
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeAdd(bankBal, amount));
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          const cardBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeSubtract(cardBal, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const bankBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeAdd(bankBal, amount));
         }
         break;
 
       case 'LOAN_DISBURSEMENT':
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeAdd(bankBal, amount));
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          const cardBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeSubtract(cardBal, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const bankBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeAdd(bankBal, amount));
         }
         if (tx.loanId && loanPrincipalMap.has(tx.loanId)) {
           const current = loanPrincipalMap.get(tx.loanId)!;
@@ -149,10 +257,13 @@ export function recalculateAllBalances(
         break;
 
       case 'LOAN_REPAYMENT':
-        // Repayment decreases bank
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeSubtract(bankBal, amount));
+        // Repayment decreases bank or increases card liability
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          const cardBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeAdd(cardBal, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const bankBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeSubtract(bankBal, amount));
         }
         // Principal portion reduces loan liability
         const principalPortion = Number(tx.loanPrincipalPortion) || amount;
@@ -163,53 +274,68 @@ export function recalculateAllBalances(
         break;
 
       case 'MONEY_LENT':
-        // Gave money to someone -> Bank decreases, debt receivable created
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeSubtract(bankBal, amount));
+        // Gave money to someone -> Bank decreases or Card increases, debt receivable created
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          const cardBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeAdd(cardBal, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const bankBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeSubtract(bankBal, amount));
         }
         break;
 
       case 'MONEY_LENT_REPAYMENT':
-        // Received money back that was lent -> Bank increases
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeAdd(bankBal, amount));
+        // Received money back that was lent -> Bank increases or Card decreases
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          const cardBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeSubtract(cardBal, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const bankBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeAdd(bankBal, amount));
         }
         break;
 
       case 'MONEY_BORROWED':
-        // Borrowed money from someone -> Bank increases
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeAdd(bankBal, amount));
+        // Borrowed money from someone -> Bank increases or Card decreases
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          const cardBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeSubtract(cardBal, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const bankBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeAdd(bankBal, amount));
         }
         break;
 
       case 'MONEY_BORROWED_REPAYMENT':
-        // Repaid borrowed money -> Bank decreases
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeSubtract(bankBal, amount));
+        // Repaid borrowed money -> Bank decreases or Card increases
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          const cardBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeAdd(cardBal, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const bankBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeSubtract(bankBal, amount));
         }
         break;
 
       case 'REFUND':
         // Refund increases bank or reduces card outstanding
-        if (tx.creditCardId && cardMap.has(tx.creditCardId)) {
-          const cardBal = cardMap.get(tx.creditCardId)!;
-          cardMap.set(tx.creditCardId, Math.max(0, safeSubtract(cardBal, amount)));
-        } else if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeAdd(bankBal, amount));
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          const cardBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeSubtract(cardBal, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const bankBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeAdd(bankBal, amount));
         }
         break;
 
       case 'ADJUSTMENT':
         // Direct adjustment from reconciliation
-        if (tx.accountId && accountMap.has(tx.accountId)) {
-          const bankBal = accountMap.get(tx.accountId)!;
-          accountMap.set(tx.accountId, safeAdd(bankBal, amount));
+        if (effectiveCardId && cardMap.has(effectiveCardId)) {
+          const cardBal = cardMap.get(effectiveCardId)!;
+          cardMap.set(effectiveCardId, safeAdd(cardBal, amount));
+        } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
+          const bankBal = accountMap.get(effectiveAccountId)!;
+          accountMap.set(effectiveAccountId, safeAdd(bankBal, amount));
         }
         break;
     }
@@ -478,7 +604,23 @@ export function learnMerchantSuggestion(
   // Find most frequent combination in recent transactions
   const matched = transactions
     .filter(t => !t.isDeleted && t.merchantName?.toLowerCase() === cleanName)
-    .sort((a, b) => b.timestamp - a.timestamp);
+    .sort((a, b) => {
+      const dateA = a.date || '';
+      const dateB = b.date || '';
+      const dateCompare = dateB.localeCompare(dateA);
+      if (dateCompare !== 0) return dateCompare;
+
+      const timeA = a.time || '00:00';
+      const timeB = b.time || '00:00';
+      const timeCompare = timeB.localeCompare(timeA);
+      if (timeCompare !== 0) return timeCompare;
+
+      const tsA = a.timestamp || 0;
+      const tsB = b.timestamp || 0;
+      if (tsA && tsB && tsA !== tsB) return tsB - tsA;
+      
+      return 0;
+    });
 
   if (matched.length > 0) {
     const latest = matched[0];

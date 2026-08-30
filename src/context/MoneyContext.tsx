@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { useAuth } from './AuthContext';
 import {
   Account,
   CreditCard,
@@ -16,6 +15,8 @@ import {
   DebtRecord,
   AccountReconciliation,
   AppSettings,
+  AccountSortOption,
+  CardSortOption,
   TransactionType,
   Goal,
   GoalAllocation,
@@ -79,6 +80,9 @@ interface MoneyContextType {
   deletedSubscriptions: Subscription[];
   deletedRecurring: RecurringTransaction[];
   deletedGoals: Goal[];
+  deletedLoans: Loan[];
+  deletedInvestments: Investment[];
+  deletedDebts: DebtRecord[];
   
   // UI & Security State
   isLocked: boolean;
@@ -91,7 +95,9 @@ interface MoneyContextType {
   addTransaction: (tx: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'timestamp'>) => string;
   updateTransaction: (id: string, updates: Partial<Transaction>) => void;
   deleteTransaction: (id: string, softDelete?: boolean) => void;
+  deleteTransactions: (ids: string[], softDelete?: boolean) => void;
   restoreTransaction: (id: string) => void;
+  restoreTransactions: (ids: string[]) => void;
   permanentlyDeleteTransaction: (id: string) => void;
   emptyTrash: () => void;
   emptyAllTrash: () => void;
@@ -110,12 +116,16 @@ interface MoneyContextType {
   deleteAccount: (id: string, softDelete?: boolean) => void;
   restoreAccount: (id: string) => void;
   permanentlyDeleteAccount: (id: string) => void;
+  reorderAccounts: (orderedIds: string[]) => void;
+  setAccountSortPreference: (sort: AccountSortOption) => void;
 
   addCreditCard: (card: Omit<CreditCard, 'id' | 'createdAt' | 'updatedAt' | 'currentOutstanding'>) => string;
   updateCreditCard: (id: string, updates: Partial<CreditCard>) => void;
   deleteCreditCard: (id: string, softDelete?: boolean) => void;
   restoreCreditCard: (id: string) => void;
   permanentlyDeleteCreditCard: (id: string) => void;
+  reorderCreditCards: (orderedIds: string[]) => void;
+  setCardSortPreference: (sort: CardSortOption) => void;
   payCreditCardBill: (cardId: string, fromAccountId: string, amount: number, paymentAppId?: string) => void;
   convertAccountToCreditCard: (options: ConvertAccountToCardOptions) => string;
   convertCreditCardToAccount: (options: ConvertCardToAccountOptions) => string;
@@ -125,6 +135,7 @@ interface MoneyContextType {
   deleteBudget: (id: string, softDelete?: boolean) => void;
   restoreBudget: (id: string) => void;
   permanentlyDeleteBudget: (id: string) => void;
+  reorderBudgets: (orderedIds: string[]) => void;
 
   addSubscription: (sub: Omit<Subscription, 'id'>) => string;
   updateSubscription: (id: string, updates: Partial<Subscription>) => void;
@@ -147,30 +158,40 @@ interface MoneyContextType {
   deleteGoal: (id: string, softDelete?: boolean) => void;
   restoreGoal: (id: string) => void;
   permanentlyDeleteGoal: (id: string) => void;
+  reorderGoals: (orderedIds: string[]) => void;
   allocateToGoal: (goalId: string, amount: number, type: 'DEPOSIT' | 'WITHDRAW', accountId?: string, notes?: string) => void;
 
   addLoan: (loan: Omit<Loan, 'id' | 'createdAt' | 'outstandingPrincipal'>) => string;
   updateLoan: (id: string, updates: Partial<Loan>) => void;
-  deleteLoan: (id: string) => void;
+  deleteLoan: (id: string, softDelete?: boolean) => void;
+  restoreLoan: (id: string) => void;
+  permanentlyDeleteLoan: (id: string) => void;
   payLoanEMI: (loanId: string, fromAccountId: string, totalAmount: number, principalPortion: number, interestPortion: number) => void;
 
   addInvestment: (inv: Omit<Investment, 'id' | 'updatedAt'>) => string;
   updateInvestment: (id: string, updates: Partial<Investment>) => void;
-  deleteInvestment: (id: string) => void;
+  deleteInvestment: (id: string, softDelete?: boolean) => void;
+  restoreInvestment: (id: string) => void;
+  permanentlyDeleteInvestment: (id: string) => void;
+  reorderInvestments: (orderedIds: string[]) => void;
 
   addDebt: (debt: Omit<DebtRecord, 'id' | 'createdAt' | 'isSettled' | 'remainingAmount'>) => string;
   settleDebt: (debtId: string, settleAccountId?: string, paymentAppId?: string) => void;
-  deleteDebt: (id: string) => void;
+  deleteDebt: (id: string, softDelete?: boolean) => void;
+  restoreDebt: (id: string) => void;
+  permanentlyDeleteDebt: (id: string) => void;
 
   reconcileAccount: (accountId: string, statementBalance: number, notes?: string, autoAdjust?: boolean) => void;
 
   addCategory: (cat: Omit<Category, 'id'>) => string;
   updateCategory: (id: string, updates: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
+  reorderCategories: (orderedIds: string[]) => void;
 
   addPaymentApp: (app: Omit<PaymentApp, 'id'>) => string;
   updatePaymentApp: (id: string, updates: Partial<PaymentApp>) => void;
   deletePaymentApp: (id: string) => void;
+  reorderPaymentApps: (orderedIds: string[]) => void;
   updateSettings: (updates: Partial<AppSettings>) => void;
 
   // Activity / Audit Logs Actions
@@ -190,6 +211,7 @@ interface MoneyContextType {
 
   resetToDemoData: () => void;
   clearAllData: () => void;
+  clearTransactionsData: () => void;
   loadBackupState: (state: LocalStorageState) => void;
 }
 
@@ -212,43 +234,103 @@ function appendActivityLog(
 }
 
 export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, pushStateToCloud, pullStateFromCloud } = useAuth();
   const [state, setState] = useState<LocalStorageState>(() => loadInitialState());
   const [activeMonth, setActiveMonth] = useState<string>(() => new Date().toISOString().substring(0, 7));
   const [isLocked, setIsLocked] = useState<boolean>(() => !!loadInitialState().settings.isPinEnabled);
   const [undoToast, setUndoToast] = useState<{ message: string; onUndo: () => void } | null>(null);
-  const [isCloudLoaded, setIsCloudLoaded] = useState<boolean>(false);
+
+  // One-time migration to fix imported transfers that were missing account linking
+  useEffect(() => {
+    let needsMigration = false;
+    const migratedTransactions = state.transactions.map(t => {
+      if ((t.type === 'TRANSFER' || t.type === 'CARD_PAYMENT') && t.notes) {
+        if (t.notes.includes('Transferred Balance') && (t.notes.includes('→') || t.notes.includes('->'))) {
+          // If it's missing the other end
+          if (!t.accountName || (!t.toAccountName && !t.creditCardName)) {
+            let parts: string[] = [];
+            if (t.notes.includes('→')) parts = t.notes.replace(/Transferred Balance(\\n|\n)?/gi, '').split('→');
+            else if (t.notes.includes('->')) parts = t.notes.replace(/Transferred Balance(\\n|\n)?/gi, '').split('->');
+            
+            if (parts.length === 2) {
+              const parsedSrcName = parts[0].trim();
+              const parsedDstName = parts[1].trim();
+
+              const newT = { ...t };
+              
+              if (!newT.accountName && !newT.accountId) {
+                const effectiveSrc = state.accounts.find(a => a.name.toLowerCase() === parsedSrcName.toLowerCase());
+                const effectiveSrcCard = state.creditCards.find(c => c.name.toLowerCase() === parsedSrcName.toLowerCase());
+                if (effectiveSrcCard) {
+                   newT.creditCardId = effectiveSrcCard.id;
+                   newT.creditCardName = effectiveSrcCard.name;
+                } else if (effectiveSrc) {
+                   newT.accountId = effectiveSrc.id;
+                   newT.accountName = effectiveSrc.name;
+                } else {
+                   newT.accountName = parsedSrcName;
+                }
+              }
+
+              if (newT.type === 'TRANSFER' && !newT.toAccountName && !newT.toAccountId) {
+                const effectiveDst = state.accounts.find(a => a.name.toLowerCase() === parsedDstName.toLowerCase());
+                const effectiveDstCard = state.creditCards.find(c => c.name.toLowerCase() === parsedDstName.toLowerCase());
+                if (effectiveDst) {
+                   newT.toAccountId = effectiveDst.id;
+                   newT.toAccountName = effectiveDst.name;
+                } else if (effectiveDstCard) {
+                   newT.type = 'CARD_PAYMENT';
+                   newT.creditCardId = effectiveDstCard.id;
+                   newT.creditCardName = effectiveDstCard.name;
+                } else {
+                   newT.toAccountName = parsedDstName;
+                }
+              } else if (newT.type === 'CARD_PAYMENT' && !newT.creditCardName && !newT.creditCardId) {
+                const effectiveDstCard = state.creditCards.find(c => c.name.toLowerCase() === parsedDstName.toLowerCase());
+                if (effectiveDstCard) {
+                   newT.creditCardId = effectiveDstCard.id;
+                   newT.creditCardName = effectiveDstCard.name;
+                } else {
+                   newT.creditCardName = parsedDstName;
+                }
+              }
+
+              if (newT.accountName !== t.accountName || newT.toAccountName !== t.toAccountName || newT.creditCardName !== t.creditCardName || newT.type !== t.type) {
+                needsMigration = true;
+                return newT;
+              }
+            }
+          }
+        }
+      }
+
+      // Fix half-transfers that were mistakenly saved as TRANSFER from credit cards
+      if (t.type === 'TRANSFER' && t.creditCardId && !t.accountId && !t.toAccountId && !t.toAccountName) {
+        const newT = { ...t, type: 'EXPENSE' as TransactionType };
+        
+        // If the transaction has notes but no merchant name, use notes as the merchant
+        if (t.notes && !t.merchantName) {
+          newT.merchantName = t.notes;
+        }
+
+        needsMigration = true;
+        return newT;
+      }
+
+      return t;
+    });
+
+    if (needsMigration) {
+      setState(s => ({ ...s, transactions: migratedTransactions }));
+    }
+  }, [state.transactions, state.accounts, state.creditCards]);
+
+  
+  
 
   // Sync to localStorage on mutations
   useEffect(() => {
     saveFullState(state);
   }, [state]);
-
-  // Initial cloud state sync when user authenticates
-  useEffect(() => {
-    if (user && !isCloudLoaded) {
-      pullStateFromCloud().then(cloudData => {
-        if (cloudData && cloudData.accounts && cloudData.accounts.length > 0) {
-          setState(cloudData);
-        } else {
-          // Push initial local dataset to new Firebase user cloud store
-          pushStateToCloud(state);
-        }
-        setIsCloudLoaded(true);
-      });
-    } else if (!user) {
-      setIsCloudLoaded(false);
-    }
-  }, [user, isCloudLoaded, pullStateFromCloud, pushStateToCloud, state]);
-
-  // Debounced auto-sync to Firebase Firestore on state change
-  useEffect(() => {
-    if (!user || !isCloudLoaded) return;
-    const timer = setTimeout(() => {
-      pushStateToCloud(state);
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [state, user, isCloudLoaded, pushStateToCloud]);
 
   // Recalculate all account & card balances dynamically based on the transaction ledger
   const {
@@ -259,14 +341,15 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     debts: computedDebts,
   } = useMemo(() => {
     return recalculateAllBalances(
-      state.accounts,
-      state.creditCards,
-      state.investments,
-      state.loans,
-      state.debts,
+      (state.accounts || []).filter(a => !a.isDeleted),
+      (state.creditCards || []).filter(c => !c.isDeleted),
+      (state.investments || []).filter(i => !i.isDeleted),
+      (state.loans || []).filter(l => !l.isDeleted),
+      (state.debts || []).filter(d => !d.isDeleted),
       state.transactions
     );
   }, [state.accounts, state.creditCards, state.investments, state.loans, state.debts, state.transactions]);
+
 
   // Compute financial high level summary
   const summary = useMemo(() => {
@@ -314,6 +397,18 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return (state.goals || []).filter(g => g.isDeleted);
   }, [state.goals]);
 
+  const deletedLoans = useMemo(() => {
+    return (state.loans || []).filter(l => l.isDeleted);
+  }, [state.loans]);
+
+  const deletedInvestments = useMemo(() => {
+    return (state.investments || []).filter(i => i.isDeleted);
+  }, [state.investments]);
+
+  const deletedDebts = useMemo(() => {
+    return (state.debts || []).filter(d => d.isDeleted);
+  }, [state.debts]);
+
   const trashCount = useMemo(() => {
     return (
       deletedTransactions.length +
@@ -322,9 +417,12 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       deletedBudgets.length +
       deletedSubscriptions.length +
       deletedRecurring.length +
-      deletedGoals.length
+      deletedGoals.length +
+      deletedLoans.length +
+      deletedInvestments.length +
+      deletedDebts.length
     );
-  }, [deletedTransactions, deletedAccounts, deletedCreditCards, deletedBudgets, deletedSubscriptions, deletedRecurring, deletedGoals]);
+  }, [deletedTransactions, deletedAccounts, deletedCreditCards, deletedBudgets, deletedSubscriptions, deletedRecurring, deletedGoals, deletedLoans, deletedInvestments, deletedDebts]);
 
   const showUndo = useCallback((message: string, onUndo: () => void) => {
     setUndoToast({ message, onUndo });
@@ -467,6 +565,47 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
+  const restoreTransactions = useCallback((ids: string[]) => {
+    setState(prev => {
+      const targets = prev.transactions.filter(t => ids.includes(t.id));
+      if (targets.length === 0) return prev;
+      return {
+        ...prev,
+        transactions: prev.transactions.map(t =>
+          ids.includes(t.id) ? { ...t, isDeleted: false, deletedAt: undefined } : t
+        ),
+        activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'RESTORE', `Restored ${targets.length} transactions from Trash`),
+      };
+    });
+  }, []);
+
+  const deleteTransactions = useCallback((ids: string[], softDelete = true) => {
+    setState(prev => {
+      const targets = prev.transactions.filter(t => ids.includes(t.id));
+      if (targets.length === 0) return prev;
+
+      if (softDelete) {
+        const updatedList = prev.transactions.map(t =>
+          ids.includes(t.id) ? { ...t, isDeleted: true, deletedAt: Date.now() } : t
+        );
+        showUndo(`${targets.length} transactions moved to Trash`, () => {
+          restoreTransactions(ids);
+        });
+        return {
+          ...prev,
+          transactions: updatedList,
+          activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'DELETE', `Moved ${targets.length} transactions to Trash`),
+        };
+      } else {
+        return {
+          ...prev,
+          transactions: prev.transactions.filter(t => !ids.includes(t.id)),
+          activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'PURGE', `Permanently deleted ${targets.length} transactions`),
+        };
+      }
+    });
+  }, [showUndo, restoreTransactions]);
+
   const deleteTransaction = useCallback((id: string, softDelete = true) => {
     setState(prev => {
       const target = prev.transactions.find(t => t.id === id);
@@ -550,7 +689,12 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         prev.accounts.filter(a => a.isDeleted).length +
         prev.creditCards.filter(c => c.isDeleted).length +
         prev.budgets.filter(b => b.isDeleted).length +
-        prev.subscriptions.filter(s => s.isDeleted).length;
+        prev.subscriptions.filter(s => s.isDeleted).length +
+        (prev.recurring || []).filter(r => r.isDeleted).length +
+        (prev.goals || []).filter(g => g.isDeleted).length +
+        (prev.loans || []).filter(l => l.isDeleted).length +
+        (prev.investments || []).filter(i => i.isDeleted).length +
+        (prev.debts || []).filter(d => d.isDeleted).length;
 
       return {
         ...prev,
@@ -559,6 +703,11 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         creditCards: prev.creditCards.filter(c => !c.isDeleted),
         budgets: prev.budgets.filter(b => !b.isDeleted),
         subscriptions: prev.subscriptions.filter(s => !s.isDeleted),
+        recurring: (prev.recurring || []).filter(r => !r.isDeleted),
+        goals: (prev.goals || []).filter(g => !g.isDeleted),
+        loans: (prev.loans || []).filter(l => !l.isDeleted),
+        investments: (prev.investments || []).filter(i => !i.isDeleted),
+        debts: (prev.debts || []).filter(d => !d.isDeleted),
         activityLogs: appendActivityLog(prev.activityLogs, 'SYSTEM', 'PURGE', `Emptied all Trash bins (${totalPurged} items purged)`),
       };
     });
@@ -572,6 +721,11 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       creditCards: prev.creditCards.map(c => ({ ...c, isDeleted: false, deletedAt: undefined })),
       budgets: prev.budgets.map(b => ({ ...b, isDeleted: false, deletedAt: undefined })),
       subscriptions: prev.subscriptions.map(s => ({ ...s, isDeleted: false, deletedAt: undefined })),
+      recurring: (prev.recurring || []).map(r => ({ ...r, isDeleted: false, deletedAt: undefined })),
+      goals: (prev.goals || []).map(g => ({ ...g, isDeleted: false, deletedAt: undefined })),
+      loans: (prev.loans || []).map(l => ({ ...l, isDeleted: false, deletedAt: undefined })),
+      investments: (prev.investments || []).map(i => ({ ...i, isDeleted: false, deletedAt: undefined })),
+      debts: (prev.debts || []).map(d => ({ ...d, isDeleted: false, deletedAt: undefined })),
       activityLogs: appendActivityLog(prev.activityLogs, 'SYSTEM', 'RESTORE', `Restored all items from Trash bin`),
     }));
   }, []);
@@ -863,6 +1017,43 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
+  const reorderAccounts = useCallback((orderedIds: string[]) => {
+    setState(prev => {
+      const orderMap = new Map<string, number>();
+      orderedIds.forEach((id, idx) => orderMap.set(id, idx));
+
+      const sorted = [...prev.accounts].sort((a, b) => {
+        const orderA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+        const orderB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+        return orderA - orderB;
+      }).map((acc, index) => ({
+        ...acc,
+        order: index,
+        updatedAt: Date.now(),
+      }));
+
+      return {
+        ...prev,
+        accounts: sorted,
+        settings: {
+          ...prev.settings,
+          accountSortPreference: 'CUSTOM',
+        },
+        activityLogs: appendActivityLog(prev.activityLogs, 'ACCOUNT', 'UPDATE', `Rearranged ${sorted.length} accounts layout order`),
+      };
+    });
+  }, []);
+
+  const setAccountSortPreference = useCallback((sort: AccountSortOption) => {
+    setState(prev => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        accountSortPreference: sort,
+      },
+    }));
+  }, []);
+
   // ----------------------------------------------------
   // CREDIT CARDS
   // ----------------------------------------------------
@@ -978,6 +1169,43 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }),
       };
     });
+  }, []);
+
+  const reorderCreditCards = useCallback((orderedIds: string[]) => {
+    setState(prev => {
+      const orderMap = new Map<string, number>();
+      orderedIds.forEach((id, idx) => orderMap.set(id, idx));
+
+      const sorted = [...prev.creditCards].sort((a, b) => {
+        const orderA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+        const orderB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+        return orderA - orderB;
+      }).map((card, index) => ({
+        ...card,
+        order: index,
+        updatedAt: Date.now(),
+      }));
+
+      return {
+        ...prev,
+        creditCards: sorted,
+        settings: {
+          ...prev.settings,
+          cardSortPreference: 'CUSTOM',
+        },
+        activityLogs: appendActivityLog(prev.activityLogs, 'CREDIT_CARD', 'UPDATE', `Rearranged ${sorted.length} credit cards layout order`),
+      };
+    });
+  }, []);
+
+  const setCardSortPreference = useCallback((sort: CardSortOption) => {
+    setState(prev => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        cardSortPreference: sort,
+      },
+    }));
   }, []);
 
   const payCreditCardBill = useCallback((cardId: string, fromAccountId: string, amount: number, paymentAppId?: string) => {
@@ -1201,7 +1429,7 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       return {
         ...prev,
-        creditCards: prev.creditCards.filter(c => c.id !== options.cardId),
+        creditCards: options.deleteOriginalCard !== false ? prev.creditCards.filter(c => c.id !== options.cardId) : prev.creditCards.map(c => c.id === options.cardId ? { ...c, isActive: false } : c),
         accounts: [...prev.accounts, newAcc],
         transactions: updatedTransactions,
         subscriptions: updatedSubscriptions,
@@ -1320,6 +1548,28 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           entityId: id,
           entityName: target?.name,
         }),
+      };
+    });
+  }, []);
+
+  const reorderBudgets = useCallback((orderedIds: string[]) => {
+    setState(prev => {
+      const orderMap = new Map<string, number>();
+      orderedIds.forEach((id, idx) => orderMap.set(id, idx));
+
+      const sorted = [...prev.budgets].sort((a, b) => {
+        const orderA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+        const orderB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+        return orderA - orderB;
+      }).map((budget, index) => ({
+        ...budget,
+        order: index + 1,
+      }));
+
+      return {
+        ...prev,
+        budgets: sorted,
+        activityLogs: appendActivityLog(prev.activityLogs, 'BUDGET', 'UPDATE', `Rearranged ${sorted.length} monthly budgets order`),
       };
     });
   }, []);
@@ -1568,12 +1818,13 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return result;
   }, [state.recurring, state.subscriptions, state.transactions]);
 
-  const triggerManualRecurringExecution = useCallback((recurringId: string): string => {
-    const rule = (state.recurring || []).find(r => r.id === recurringId);
-    if (!rule) return '';
+  const triggerManualRecurringExecution = useCallback((recurringOrSubId: string): string => {
+    const rule = (state.recurring || []).find(r => r.id === recurringOrSubId);
+    const sub = (state.subscriptions || []).find(s => s.id === recurringOrSubId);
+    
+    if (!rule && !sub) return '';
 
     const todayStr = new Date().toISOString().substring(0, 10);
-    const txId = 'tx_rec_manual_' + rule.id + '_' + Date.now();
     const dateParts = todayStr.split('-');
     const timestamp = new Date(
       Number(dateParts[0]),
@@ -1583,52 +1834,101 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       0
     ).getTime() || Date.now();
 
-    const newTx: Transaction = {
-      id: txId,
-      amount: rule.amount,
-      type: rule.type,
-      date: todayStr,
-      time: '09:00',
-      timestamp,
-      categoryId: rule.categoryId,
-      categoryName: rule.categoryName,
-      subcategory: rule.subcategory,
-      merchantName: rule.merchantName || rule.name,
-      accountId: rule.accountId,
-      accountName: rule.accountName,
-      creditCardId: rule.creditCardId,
-      creditCardName: rule.creditCardName,
-      toAccountId: rule.toAccountId,
-      toAccountName: rule.toAccountName,
-      paymentAppId: rule.paymentAppId,
-      paymentAppName: rule.paymentAppName,
-      recurringId: rule.id,
-      recurringName: rule.name,
-      isAutoRecorded: true,
-      notes: rule.notes ? `${rule.notes} (Recurring: ${rule.name})` : `Recorded recurring payment: ${rule.name}`,
-      tags: Array.from(new Set([...(rule.tags || []), '#recurring'])),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+    if (rule) {
+      const txId = 'tx_rec_manual_' + rule.id + '_' + Date.now();
+      const newTx: Transaction = {
+        id: txId,
+        amount: rule.amount,
+        type: rule.type,
+        date: todayStr,
+        time: '09:00',
+        timestamp,
+        categoryId: rule.categoryId,
+        categoryName: rule.categoryName,
+        subcategory: rule.subcategory,
+        merchantName: rule.merchantName || rule.name,
+        accountId: rule.accountId,
+        accountName: rule.accountName,
+        creditCardId: rule.creditCardId,
+        creditCardName: rule.creditCardName,
+        toAccountId: rule.toAccountId,
+        toAccountName: rule.toAccountName,
+        paymentAppId: rule.paymentAppId,
+        paymentAppName: rule.paymentAppName,
+        recurringId: rule.id,
+        recurringName: rule.name,
+        isAutoRecorded: true,
+        notes: rule.notes ? `${rule.notes} (Recurring: ${rule.name})` : `Recorded recurring payment: ${rule.name}`,
+        tags: Array.from(new Set([...(rule.tags || []), '#recurring'])),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
 
-    const nextDueDate = calculateNextDueDate(rule.nextDueDate || todayStr, rule.frequency, rule.interval || 1);
+      const nextDueDate = calculateNextDueDate(rule.nextDueDate || todayStr, rule.frequency, rule.interval || 1);
 
-    setState(prev => ({
-      ...prev,
-      transactions: [newTx, ...prev.transactions],
-      recurring: (prev.recurring || []).map(r =>
-        r.id === recurringId
-          ? { ...r, nextDueDate, lastGeneratedDate: todayStr, updatedAt: Date.now() }
-          : r
-      ),
-      activityLogs: appendActivityLog(prev.activityLogs, 'RECURRING', 'CREATE', `Manually executed recurring payment for "${rule.name}" (${formatINR(rule.amount)})`, {
-        entityId: txId,
-        entityName: rule.name,
-      }),
-    }));
+      setState(prev => ({
+        ...prev,
+        transactions: [newTx, ...prev.transactions],
+        recurring: (prev.recurring || []).map(r =>
+          r.id === recurringOrSubId
+            ? { ...r, nextDueDate, lastGeneratedDate: todayStr, updatedAt: Date.now() }
+            : r
+        ),
+        activityLogs: appendActivityLog(prev.activityLogs, 'RECURRING', 'CREATE', `Manually executed recurring payment for "${rule.name}" (${formatINR(rule.amount)})`, {
+          entityId: txId,
+          entityName: rule.name,
+        }),
+      }));
 
-    return txId;
-  }, [state.recurring]);
+      return txId;
+    }
+
+    if (sub) {
+      const txId = 'tx_sub_manual_' + sub.id + '_' + Date.now();
+      const newTx: Transaction = {
+        id: txId,
+        amount: sub.amount,
+        type: 'EXPENSE',
+        date: todayStr,
+        time: '09:00',
+        timestamp,
+        categoryId: sub.categoryId || 'subscriptions',
+        categoryName: sub.categoryName || 'Subscriptions',
+        merchantName: sub.name,
+        accountId: sub.accountId,
+        accountName: sub.accountName,
+        creditCardId: sub.creditCardId,
+        creditCardName: sub.creditCardName,
+        paymentAppId: sub.paymentAppId,
+        paymentAppName: sub.paymentAppName,
+        isAutoRecorded: true,
+        notes: sub.notes ? `${sub.notes} (Subscription: ${sub.name})` : `Recorded subscription payment: ${sub.name}`,
+        tags: ['#subscription', '#recurring'],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      const nextBillingDate = calculateNextDueDate(sub.nextBillingDate || todayStr, sub.frequency, 1);
+
+      setState(prev => ({
+        ...prev,
+        transactions: [newTx, ...prev.transactions],
+        subscriptions: (prev.subscriptions || []).map(s =>
+          s.id === recurringOrSubId
+            ? { ...s, nextBillingDate, lastGeneratedDate: todayStr }
+            : s
+        ),
+        activityLogs: appendActivityLog(prev.activityLogs, 'SUBSCRIPTION', 'CREATE', `Manually executed subscription payment for "${sub.name}" (${formatINR(sub.amount)})`, {
+          entityId: txId,
+          entityName: sub.name,
+        }),
+      }));
+
+      return txId;
+    }
+
+    return '';
+  }, [state.recurring, state.subscriptions]);
 
   // Automatic recurring payments processor on startup / mount
   useEffect(() => {
@@ -1771,6 +2071,29 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
+  const reorderGoals = useCallback((orderedIds: string[]) => {
+    setState(prev => {
+      const orderMap = new Map<string, number>();
+      orderedIds.forEach((id, idx) => orderMap.set(id, idx));
+
+      const sorted = [...(prev.goals || [])].sort((a, b) => {
+        const orderA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+        const orderB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+        return orderA - orderB;
+      }).map((goal, index) => ({
+        ...goal,
+        order: index + 1,
+        updatedAt: Date.now(),
+      }));
+
+      return {
+        ...prev,
+        goals: sorted,
+        activityLogs: appendActivityLog(prev.activityLogs, 'GOAL', 'UPDATE', `Rearranged ${sorted.length} savings goals order`),
+      };
+    });
+  }, []);
+
   const allocateToGoal = useCallback((goalId: string, amount: number, type: 'DEPOSIT' | 'WITHDRAW', accountId?: string, notes?: string) => {
     const goal = (state.goals || []).find(g => g.id === goalId);
     if (!goal || amount <= 0) return;
@@ -1886,13 +2209,61 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
-  const deleteLoan = useCallback((id: string) => {
+  const deleteLoan = useCallback((id: string, softDelete = true) => {
     setState(prev => {
-      const target = prev.loans.find(l => l.id === id);
+      const target = (prev.loans || []).find(l => l.id === id);
+      if (!target) return prev;
+
+      if (softDelete) {
+        showUndo(`Loan "${target.name}" moved to Trash`, () => {
+          restoreLoan(id);
+        });
+        return {
+          ...prev,
+          loans: (prev.loans || []).map(l =>
+            l.id === id ? { ...l, isDeleted: true, deletedAt: Date.now() } : l
+          ),
+          activityLogs: appendActivityLog(prev.activityLogs, 'LOAN', 'DELETE', `Moved loan "${target.name}" to Trash`, {
+            entityId: id,
+            entityName: target.name,
+          }),
+        };
+      } else {
+        return {
+          ...prev,
+          loans: (prev.loans || []).filter(l => l.id !== id),
+          activityLogs: appendActivityLog(prev.activityLogs, 'LOAN', 'PURGE', `Permanently deleted loan "${target.name}"`, {
+            entityId: id,
+            entityName: target.name,
+          }),
+        };
+      }
+    });
+  }, [showUndo]);
+
+  const restoreLoan = useCallback((id: string) => {
+    setState(prev => {
+      const target = (prev.loans || []).find(l => l.id === id);
       return {
         ...prev,
-        loans: prev.loans.filter(l => l.id !== id),
-        activityLogs: appendActivityLog(prev.activityLogs, 'LOAN', 'DELETE', `Deleted loan "${target?.name || 'Loan'}"`, {
+        loans: (prev.loans || []).map(l =>
+          l.id === id ? { ...l, isDeleted: false, deletedAt: undefined } : l
+        ),
+        activityLogs: appendActivityLog(prev.activityLogs, 'LOAN', 'RESTORE', `Restored loan "${target?.name || 'Loan'}" from Trash`, {
+          entityId: id,
+          entityName: target?.name,
+        }),
+      };
+    });
+  }, []);
+
+  const permanentlyDeleteLoan = useCallback((id: string) => {
+    setState(prev => {
+      const target = (prev.loans || []).find(l => l.id === id);
+      return {
+        ...prev,
+        loans: (prev.loans || []).filter(l => l.id !== id),
+        activityLogs: appendActivityLog(prev.activityLogs, 'LOAN', 'PURGE', `Permanently deleted loan "${target?.name || 'Loan'}"`, {
           entityId: id,
           entityName: target?.name,
         }),
@@ -1956,16 +2327,87 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
-  const deleteInvestment = useCallback((id: string) => {
+  const deleteInvestment = useCallback((id: string, softDelete = true) => {
     setState(prev => {
-      const target = prev.investments.find(i => i.id === id);
+      const target = (prev.investments || []).find(i => i.id === id);
+      if (!target) return prev;
+
+      if (softDelete) {
+        showUndo(`Investment "${target.name}" moved to Trash`, () => {
+          restoreInvestment(id);
+        });
+        return {
+          ...prev,
+          investments: (prev.investments || []).map(i =>
+            i.id === id ? { ...i, isDeleted: true, deletedAt: Date.now() } : i
+          ),
+          activityLogs: appendActivityLog(prev.activityLogs, 'INVESTMENT', 'DELETE', `Moved investment "${target.name}" to Trash`, {
+            entityId: id,
+            entityName: target.name,
+          }),
+        };
+      } else {
+        return {
+          ...prev,
+          investments: (prev.investments || []).filter(i => i.id !== id),
+          activityLogs: appendActivityLog(prev.activityLogs, 'INVESTMENT', 'PURGE', `Permanently deleted investment "${target.name}"`, {
+            entityId: id,
+            entityName: target.name,
+          }),
+        };
+      }
+    });
+  }, [showUndo]);
+
+  const restoreInvestment = useCallback((id: string) => {
+    setState(prev => {
+      const target = (prev.investments || []).find(i => i.id === id);
       return {
         ...prev,
-        investments: prev.investments.filter(i => i.id !== id),
-        activityLogs: appendActivityLog(prev.activityLogs, 'INVESTMENT', 'DELETE', `Removed investment "${target?.name || 'Investment'}"`, {
+        investments: (prev.investments || []).map(i =>
+          i.id === id ? { ...i, isDeleted: false, deletedAt: undefined } : i
+        ),
+        activityLogs: appendActivityLog(prev.activityLogs, 'INVESTMENT', 'RESTORE', `Restored investment "${target?.name || 'Investment'}" from Trash`, {
           entityId: id,
           entityName: target?.name,
         }),
+      };
+    });
+  }, []);
+
+  const permanentlyDeleteInvestment = useCallback((id: string) => {
+    setState(prev => {
+      const target = (prev.investments || []).find(i => i.id === id);
+      return {
+        ...prev,
+        investments: (prev.investments || []).filter(i => i.id !== id),
+        activityLogs: appendActivityLog(prev.activityLogs, 'INVESTMENT', 'PURGE', `Permanently deleted investment "${target?.name || 'Investment'}"`, {
+          entityId: id,
+          entityName: target?.name,
+        }),
+      };
+    });
+  }, []);
+
+  const reorderInvestments = useCallback((orderedIds: string[]) => {
+    setState(prev => {
+      const orderMap = new Map<string, number>();
+      orderedIds.forEach((id, idx) => orderMap.set(id, idx));
+
+      const sorted = [...prev.investments].sort((a, b) => {
+        const orderA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+        const orderB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+        return orderA - orderB;
+      }).map((inv, index) => ({
+        ...inv,
+        order: index + 1,
+        updatedAt: Date.now(),
+      }));
+
+      return {
+        ...prev,
+        investments: sorted,
+        activityLogs: appendActivityLog(prev.activityLogs, 'INVESTMENT', 'UPDATE', `Rearranged ${sorted.length} investments portfolio order`),
       };
     });
   }, []);
@@ -2043,13 +2485,61 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
   }, [state.debts, state.accounts, addTransaction]);
 
-  const deleteDebt = useCallback((id: string) => {
+  const deleteDebt = useCallback((id: string, softDelete = true) => {
     setState(prev => {
-      const target = prev.debts.find(d => d.id === id);
+      const target = (prev.debts || []).find(d => d.id === id);
+      if (!target) return prev;
+
+      if (softDelete) {
+        showUndo(`Debt record for "${target.personName}" moved to Trash`, () => {
+          restoreDebt(id);
+        });
+        return {
+          ...prev,
+          debts: (prev.debts || []).map(d =>
+            d.id === id ? { ...d, isDeleted: true, deletedAt: Date.now() } : d
+          ),
+          activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'DELETE', `Moved debt record for "${target.personName}" to Trash`, {
+            entityId: id,
+            entityName: target.personName,
+          }),
+        };
+      } else {
+        return {
+          ...prev,
+          debts: (prev.debts || []).filter(d => d.id !== id),
+          activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'PURGE', `Permanently deleted debt record for "${target.personName}"`, {
+            entityId: id,
+            entityName: target.personName,
+          }),
+        };
+      }
+    });
+  }, [showUndo]);
+
+  const restoreDebt = useCallback((id: string) => {
+    setState(prev => {
+      const target = (prev.debts || []).find(d => d.id === id);
       return {
         ...prev,
-        debts: prev.debts.filter(d => d.id !== id),
-        activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'DELETE', `Deleted debt record for ${target?.personName || 'Person'}`, {
+        debts: (prev.debts || []).map(d =>
+          d.id === id ? { ...d, isDeleted: false, deletedAt: undefined } : d
+        ),
+        activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'RESTORE', `Restored debt record for "${target?.personName || 'Person'}" from Trash`, {
+          entityId: id,
+          entityName: target?.personName,
+        }),
+      };
+    });
+  }, []);
+
+  const permanentlyDeleteDebt = useCallback((id: string) => {
+    setState(prev => {
+      const target = (prev.debts || []).find(d => d.id === id);
+      return {
+        ...prev,
+        debts: (prev.debts || []).filter(d => d.id !== id),
+        activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'PURGE', `Permanently deleted debt record for "${target?.personName || 'Person'}"`, {
           entityId: id,
           entityName: target?.personName,
         }),
@@ -2158,6 +2648,28 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
+  const reorderCategories = useCallback((orderedIds: string[]) => {
+    setState(prev => {
+      const orderMap = new Map<string, number>();
+      orderedIds.forEach((id, idx) => orderMap.set(id, idx));
+
+      const sorted = [...prev.categories].sort((a, b) => {
+        const orderA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+        const orderB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+        return orderA - orderB;
+      }).map((cat, index) => ({
+        ...cat,
+        order: index + 1,
+      }));
+
+      return {
+        ...prev,
+        categories: sorted,
+        activityLogs: appendActivityLog(prev.activityLogs, 'CATEGORY', 'UPDATE', `Rearranged ${sorted.length} categories order`),
+      };
+    });
+  }, []);
+
   const addPaymentApp = useCallback((app: Omit<PaymentApp, 'id'>): string => {
     const id = 'papp_' + Date.now();
     const newApp: PaymentApp = { ...app, id, isCustom: true };
@@ -2198,6 +2710,28 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           entityId: id,
           entityName: target?.name,
         }),
+      };
+    });
+  }, []);
+
+  const reorderPaymentApps = useCallback((orderedIds: string[]) => {
+    setState(prev => {
+      const orderMap = new Map<string, number>();
+      orderedIds.forEach((id, idx) => orderMap.set(id, idx));
+
+      const sorted = [...prev.paymentApps].sort((a, b) => {
+        const orderA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+        const orderB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+        return orderA - orderB;
+      }).map((app, index) => ({
+        ...app,
+        order: index + 1,
+      }));
+
+      return {
+        ...prev,
+        paymentApps: sorted,
+        activityLogs: appendActivityLog(prev.activityLogs, 'PAYMENT_APP', 'UPDATE', `Rearranged ${sorted.length} payment apps order`),
       };
     });
   }, []);
@@ -2291,27 +2825,44 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const clearAllData = useCallback(() => {
-    const emptyState: LocalStorageState = {
-      accounts: [],
-      creditCards: [],
-      categories: DEFAULT_CATEGORIES,
-      merchants: [],
-      paymentApps: DEFAULT_PAYMENT_APPS,
-      transactions: [],
-      recurring: [],
-      subscriptions: [],
-      budgets: [],
-      goals: [],
-      loans: [],
-      investments: [],
-      debts: [],
-      reconciliations: [],
-      settings: { ...DEFAULT_APP_SETTINGS, userName: 'User' },
-      activityLogs: [
-        createActivityEntry('SYSTEM', 'RESET', 'Purged all user records and reset ledger to zero'),
-      ],
-    };
-    setState(emptyState);
+    setState(prev => {
+      const trashedTransactions = prev.transactions.map(t => 
+        t.isDeleted ? t : { ...t, isDeleted: true, deletedAt: Date.now() }
+      );
+      return {
+        accounts: [],
+        creditCards: [],
+        categories: DEFAULT_CATEGORIES,
+        merchants: [],
+        paymentApps: DEFAULT_PAYMENT_APPS,
+        transactions: trashedTransactions,
+        recurring: [],
+        subscriptions: [],
+        budgets: [],
+        goals: [],
+        loans: [],
+        investments: [],
+        debts: [],
+        reconciliations: [],
+        settings: { ...DEFAULT_APP_SETTINGS, userName: prev.settings.userName || 'User' },
+        activityLogs: appendActivityLog(prev.activityLogs, 'SYSTEM', 'RESET', `Purged all user records and moved ${prev.transactions.length} transactions to Trash`),
+      };
+    });
+  }, []);
+
+  const clearTransactionsData = useCallback(() => {
+    setState(prev => {
+      const trashedTransactions = prev.transactions.map(t => 
+        t.isDeleted ? t : { ...t, isDeleted: true, deletedAt: Date.now() }
+      );
+      return {
+        ...prev,
+        transactions: trashedTransactions,
+        recurring: [],
+        reconciliations: [],
+        activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'DELETE', `Moved all transactions to Trash`),
+      };
+    });
   }, []);
 
   const loadBackupState = useCallback((restored: LocalStorageState) => {
@@ -2329,13 +2880,13 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         paymentApps: state.paymentApps,
         transactions: state.transactions,
         templates: state.templates || [],
-        recurring: state.recurring,
-        subscriptions: state.subscriptions,
-        budgets: state.budgets,
-        goals: state.goals || [],
+        recurring: (state.recurring || []).filter(r => !r.isDeleted),
+        subscriptions: (state.subscriptions || []).filter(s => !s.isDeleted),
+        budgets: (state.budgets || []).filter(b => !b.isDeleted),
+        goals: (state.goals || []).filter(g => !g.isDeleted),
         loans: computedLoans,
-        investments: state.investments,
-        debts: state.debts,
+        investments: computedInvestments,
+        debts: computedDebts,
         reconciliations: state.reconciliations,
         settings: state.settings,
         activityLogs: state.activityLogs || [],
@@ -2351,6 +2902,9 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deletedSubscriptions,
         deletedRecurring,
         deletedGoals,
+        deletedLoans,
+        deletedInvestments,
+        deletedDebts,
         isLocked,
         unlockApp,
         lockApp,
@@ -2359,7 +2913,9 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addTransaction,
         updateTransaction,
         deleteTransaction,
+        deleteTransactions,
         restoreTransaction,
+        restoreTransactions,
         permanentlyDeleteTransaction,
         emptyTrash,
         emptyAllTrash,
@@ -2375,11 +2931,15 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteAccount,
         restoreAccount,
         permanentlyDeleteAccount,
+        reorderAccounts,
+        setAccountSortPreference,
         addCreditCard,
         updateCreditCard,
         deleteCreditCard,
         restoreCreditCard,
         permanentlyDeleteCreditCard,
+        reorderCreditCards,
+        setCardSortPreference,
         payCreditCardBill,
         convertAccountToCreditCard,
         convertCreditCardToAccount,
@@ -2388,6 +2948,7 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteBudget,
         restoreBudget,
         permanentlyDeleteBudget,
+        reorderBudgets,
         addSubscription,
         updateSubscription,
         deleteSubscription,
@@ -2406,30 +2967,41 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteGoal,
         restoreGoal,
         permanentlyDeleteGoal,
+        reorderGoals,
         allocateToGoal,
         addLoan,
         updateLoan,
         deleteLoan,
+        restoreLoan,
+        permanentlyDeleteLoan,
         payLoanEMI,
         addInvestment,
         updateInvestment,
         deleteInvestment,
+        restoreInvestment,
+        permanentlyDeleteInvestment,
+        reorderInvestments,
         addDebt,
         settleDebt,
         deleteDebt,
+        restoreDebt,
+        permanentlyDeleteDebt,
         reconcileAccount,
         addCategory,
         updateCategory,
         deleteCategory,
+        reorderCategories,
         addPaymentApp,
         updatePaymentApp,
         deletePaymentApp,
+        reorderPaymentApps,
         updateSettings,
         logActivity,
         clearActivityLogs,
         exportActivityLogs,
         resetToDemoData,
         clearAllData,
+        clearTransactionsData,
         loadBackupState,
       }}
     >

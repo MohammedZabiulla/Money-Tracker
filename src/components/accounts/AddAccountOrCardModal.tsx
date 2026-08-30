@@ -13,6 +13,7 @@ import {
 import { CardVisual } from '../common/CardVisual';
 import { BankVisual } from '../common/BankVisual';
 import { Bank3DIcon } from '../common/IconHelper';
+import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import {
   X,
   Plus,
@@ -225,7 +226,7 @@ export const AddAccountOrCardModal: React.FC<AddAccountOrCardModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-[100] bg-slate-950/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6">
         
         {/* Header */}
@@ -371,18 +372,18 @@ export const AddAccountOrCardModal: React.FC<AddAccountOrCardModalProps> = ({
                   <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 block">
                     Account Type
                   </label>
-                  <select
+                  <CustomSelect
                     value={accType}
-                    onChange={e => setAccType(e.target.value as AccountType)}
-                    className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="SAVINGS">Savings Account</option>
-                    <option value="SALARY">Salary Account</option>
-                    <option value="CURRENT">Current Account</option>
-                    <option value="WALLET">Digital Wallet</option>
-                    <option value="CASH">Physical Cash</option>
-                    <option value="INVESTMENT">Demag / Investment Account</option>
-                  </select>
+                    onChange={(val) => setAccType(val as AccountType)}
+                    options={[
+                      { value: 'SAVINGS', label: 'Savings Account' },
+                      { value: 'SALARY', label: 'Salary Account' },
+                      { value: 'CURRENT', label: 'Current Account' },
+                      { value: 'WALLET', label: 'Digital Wallet' },
+                      { value: 'CASH', label: 'Physical Cash' },
+                      { value: 'INVESTMENT', label: 'Demag / Investment Account' },
+                    ]}
+                  />
                 </div>
 
                 {/* Opening Balance */}
@@ -525,20 +526,16 @@ export const AddAccountOrCardModal: React.FC<AddAccountOrCardModalProps> = ({
                   <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1 block">
                     Issuer Institution
                   </label>
-                  <select
+                  <CustomSelect
                     value={cardIssuer}
-                    onChange={e => setCardIssuer(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  >
-                    {INDIAN_BANKS.map(b => (
-                      <option key={b.name} value={b.name}>
-                        {b.name}
-                      </option>
-                    ))}
-                    <option value="OneCard">OneCard / Federal</option>
-                    <option value="Scapia">Scapia / Federal</option>
-                    <option value="American Express">American Express</option>
-                  </select>
+                    onChange={setCardIssuer}
+                    options={[
+                      ...INDIAN_BANKS.map(b => ({ value: b.name, label: b.name })),
+                      { value: 'OneCard', label: 'OneCard / Federal' },
+                      { value: 'Scapia', label: 'Scapia / Federal' },
+                      { value: 'American Express', label: 'American Express' },
+                    ]}
+                  />
                 </div>
 
                 {/* Card Network */}

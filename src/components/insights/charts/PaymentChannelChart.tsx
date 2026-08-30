@@ -212,7 +212,7 @@ export const PaymentChannelChart: React.FC<PaymentChannelChartProps> = ({
       <div className="grid grid-cols-2 gap-2 pt-1">
         {data.slice(0, 6).map((item, idx) => (
           <div
-            key={idx}
+            key={`${item.name || 'channel'}-${idx}`}
             className="p-2.5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between text-xs"
           >
             <div className="flex items-center space-x-2 min-w-0">

@@ -14,7 +14,8 @@ import { EditTransactionModal } from './components/transactions/EditTransactionM
 import { TransactionDetailModal } from './components/transactions/TransactionDetailModal';
 import { TrashModal } from './components/common/TrashModal';
 import { Transaction, TransactionType } from './types';
-import { RotateCcw, X } from 'lucide-react';
+import { RotateCcw, X, Plus, Search } from 'lucide-react';
+import { motion } from 'motion/react';
 
 function MainApp() {
   const { isLocked, undoToast, dismissUndoToast, settings } = useMoney();
@@ -26,6 +27,12 @@ function MainApp() {
   const [initialAccountIdForAdd, setInitialAccountIdForAdd] = useState<string | undefined>(undefined);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [autoFocusSearch, setAutoFocusSearch] = useState(false);
+
+  // Scroll to top on tab change
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [currentTab]);
 
   // Apply dark mode class if user preference
   useEffect(() => {
@@ -51,18 +58,19 @@ function MainApp() {
     setCurrentTab('transactions');
   };
 
+  const handleOpenSearch = () => {
+    setFilterAccountId('ALL');
+    setAutoFocusSearch(true);
+    setCurrentTab('transactions');
+  };
+
   return (
     <div className="min-h-screen bg-slate-100/60 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
       <TopBar
         currentTab={currentTab}
-        onOpenSearch={() => {
-          setFilterAccountId('ALL');
-          setCurrentTab('transactions');
-        }}
-        onOpenTrash={() => setShowTrashModal(true)}
       />
 
-      <main className="flex-1 max-w-2xl w-full mx-auto px-4 pt-4">
+      <main className="flex-1 max-w-2xl w-full mx-auto px-4 pt-4 pb-36 sm:pb-44">
         {currentTab === 'home' && (
           <HomeDashboard
             onOpenAdd={handleOpenAdd}
@@ -96,6 +104,9 @@ function MainApp() {
             initialAccountId={filterAccountId}
             onSelectTransaction={setSelectedTransaction}
             onOpenAdd={() => handleOpenAdd()}
+            onEditTransaction={tx => setEditingTransaction(tx)}
+            autoFocusSearch={autoFocusSearch}
+            onResetSearchFocus={() => setAutoFocusSearch(false)}
           />
         )}
 
@@ -104,21 +115,50 @@ function MainApp() {
             onSelectTransaction={setSelectedTransaction}
             onOpenAdd={handleOpenAdd}
             onNavigateToFullFeed={handleNavigateToAccountTransactions}
+            onEditTransaction={tx => setEditingTransaction(tx)}
           />
         )}
 
         {currentTab === 'more' && <MoreView />}
       </main>
 
+      {/* Floating Action Buttons: Search (Top) and Add Transaction (Bottom) */}
+      <div className="fixed bottom-22 sm:bottom-24 right-4 sm:right-6 z-40 flex flex-col items-center gap-2.5 sm:gap-3">
+        {/* Search Floating Button (On Top) */}
+        <motion.button
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.92 }}
+          onClick={handleOpenSearch}
+          className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-white/95 dark:bg-slate-850/95 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200/90 dark:border-slate-700/90 shadow-lg shadow-slate-900/10 hover:shadow-xl transition-all flex items-center justify-center group backdrop-blur-md cursor-pointer"
+          title="Search Transactions & Filters"
+          aria-label="Search Transactions"
+        >
+          <Search size={19} className="group-hover:scale-110 transition-transform text-slate-600 dark:text-slate-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400" />
+        </motion.button>
+
+        {/* Add (+) Floating Button (Bottom Right) */}
+        <motion.button
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.92 }}
+          onClick={() => handleOpenAdd()}
+          className="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white shadow-xl shadow-emerald-600/35 hover:shadow-emerald-600/50 transition-all flex items-center justify-center group cursor-pointer"
+          title="Add New Transaction"
+          aria-label="Add New Transaction"
+        >
+          <Plus size={28} strokeWidth={2.5} className="group-hover:rotate-90 transition-transform duration-200" />
+        </motion.button>
+      </div>
+
       <BottomNav
         currentTab={currentTab === 'insights' ? 'home' : currentTab}
         onTabChange={tab => {
           if (tab === 'transactions') {
             setFilterAccountId('ALL');
+          } else {
+            setAutoFocusSearch(false);
           }
           setCurrentTab(tab as any);
         }}
-        onOpenAdd={() => handleOpenAdd()}
       />
 
       {/* Add Transaction Modal */}

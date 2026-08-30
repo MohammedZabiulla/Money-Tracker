@@ -1,17 +1,14 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useMoney } from '../../context/MoneyContext';
-import { Transaction, TransactionType } from '../../types';
+import { Transaction } from '../../types';
 import { formatINR, format12HourTime } from '../../lib/currency';
-import { IconHelper, Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
+import { Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { CustomDatePicker } from '../common/CustomDatePicker';
+import { ConfirmDeleteModal } from '../common/ConfirmDeleteModal';
 import {
   Search,
-  Filter,
   Calendar as CalendarIcon,
-  Tag,
-  ChevronDown,
-  Plus,
   ArrowDownLeft,
   ArrowUpRight,
   ArrowRightLeft,
@@ -20,43 +17,40 @@ import {
   Sparkles,
   Paperclip,
   CheckCircle2,
+  Trash2,
   X,
   CreditCard,
   Building,
-  MessageSquareCode,
   Database,
-  Layers,
+  Edit2,
+  SlidersHorizontal,
 } from 'lucide-react';
-import { motion } from 'motion/react';
-import { SMSImportModal } from './SMSImportModal';
-import { CashewImportModal } from '../more/CashewImportModal';
 
 interface TransactionsViewProps {
   onSelectTransaction: (tx: Transaction) => void;
   onOpenAdd: () => void;
   initialAccountId?: string;
+  onEditTransaction?: (tx: Transaction) => void;
+  autoFocusSearch?: boolean;
+  onResetSearchFocus?: () => void;
 }
 
 export const TransactionsView: React.FC<TransactionsViewProps> = ({
   onSelectTransaction,
   onOpenAdd,
   initialAccountId,
+  onEditTransaction,
+  autoFocusSearch,
+  onResetSearchFocus,
 }) => {
-  const { transactions, categories, accounts, creditCards, paymentApps, activeMonth, setActiveMonth } = useMoney();
+  const { transactions, categories, accounts, creditCards, activeMonth, deleteTransactions } = useMoney();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('ALL');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
   const [selectedTag, setSelectedTag] = useState<string>('ALL');
   const [selectedAccountId, setSelectedAccountId] = useState<string>(initialAccountId || 'ALL');
-  const [showSMSModal, setShowSMSModal] = useState<boolean>(false);
-  const [showCashewModal, setShowCashewModal] = useState<boolean>(false);
+  const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
 
-  useEffect(() => {
-    if (initialAccountId) {
-      setSelectedAccountId(initialAccountId);
-    }
-  }, [initialAccountId]);
-  
   // Day filter state: 'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM'
   const [dayFilter, setDayFilter] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM'>('ALL');
   const [customDate, setCustomDate] = useState<string>('');
@@ -64,6 +58,88 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   // View mode: 'feed' (Day-by-Day list) | 'calendar' (Interactive Day Matrix)
   const [viewMode, setViewMode] = useState<'feed' | 'calendar'>('feed');
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>('');
+
+  // Reference to search input for instant auto-focus on tab open
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Progressive loading states to make initial loading and typing/filtering instantaneous
+  const [displayLimit, setDisplayLimit] = useState(15);
+  const [isFullyLoaded, setIsFullyLoaded] = useState(false);
+
+  // Auto-focus search input with a slight delay for reliable keyboard rendering on mobile device taps
+  useEffect(() => {
+    if (autoFocusSearch) {
+      const timer = setTimeout(() => {
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+        if (onResetSearchFocus) {
+          onResetSearchFocus();
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [autoFocusSearch, onResetSearchFocus]);
+
+  useEffect(() => {
+    if (initialAccountId) {
+      setSelectedAccountId(initialAccountId);
+    }
+  }, [initialAccountId]);
+  
+  // Selection mode for bulk delete
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
+
+  // Delete confirmation target state
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: 'single' | 'bulk';
+    transaction?: Transaction;
+    ids: string[];
+    count: number;
+    title: string;
+    amount?: string;
+    subtitle?: string;
+    badge?: string;
+  } | null>(null);
+
+  // Hold to preview state
+  const [previewTx, setPreviewTx] = useState<Transaction | null>(null);
+  const holdTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const wasLongPressRef = useRef(false);
+
+  const clearHoldTimer = () => {
+    if (holdTimeoutRef.current) {
+      clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+  };
+
+  const handlePointerDown = (t: Transaction, e: React.PointerEvent) => {
+    if (isSelectionMode) return;
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+    clearHoldTimer();
+    wasLongPressRef.current = false;
+    
+    holdTimeoutRef.current = setTimeout(() => {
+      wasLongPressRef.current = true;
+      setPreviewTx(t);
+    }, 350); 
+  };
+
+  const handlePointerUpOrLeave = () => {
+    clearHoldTimer();
+    setPreviewTx(null);
+  };
 
   // Extract all unique tags
   const allTags = useMemo(() => {
@@ -258,15 +334,13 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         const targetAcc = accounts.find(a => a.id === selectedAccountId);
         const targetCard = creditCards.find(c => c.id === selectedAccountId);
 
-        const matchesAccId = t.accountId === selectedAccountId || t.toAccountId === selectedAccountId || t.creditCardId === selectedAccountId;
+        const matchesAccId = t.accountId === selectedAccountId || t.toAccountId === selectedAccountId || t.creditCardId === selectedAccountId || t.toCreditCardId === selectedAccountId;
         const matchesAccName = targetAcc && (
           t.accountName?.toLowerCase() === targetAcc.name.toLowerCase() ||
-          t.toAccountName?.toLowerCase() === targetAcc.name.toLowerCase() ||
-          t.accountName?.toLowerCase() === targetAcc.institution.toLowerCase()
+          t.toAccountName?.toLowerCase() === targetAcc.name.toLowerCase()
         );
         const matchesCardName = targetCard && (
-          t.creditCardName?.toLowerCase() === targetCard.name.toLowerCase() ||
-          t.creditCardName?.toLowerCase() === targetCard.issuer.toLowerCase()
+          t.creditCardName?.toLowerCase() === targetCard.name.toLowerCase()
         );
 
         if (!matchesAccId && !matchesAccName && !matchesCardName) {
@@ -275,18 +349,72 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
       }
 
       return true;
+    }).sort((a, b) => {
+      // Primary: sort by date descending (newest first)
+      const dateCompare = b.date.localeCompare(a.date);
+      if (dateCompare !== 0) return dateCompare;
+
+      // Secondary: sort by time descending (newest first)
+      const timeA = a.time || '00:00';
+      const timeB = b.time || '00:00';
+      const timeCompare = timeB.localeCompare(timeA);
+      if (timeCompare !== 0) return timeCompare;
+
+      // Tertiary: sort by timestamp descending (newest first)
+      const tsA = a.timestamp || 0;
+      const tsB = b.timestamp || 0;
+      return tsB - tsA;
     });
   }, [transactions, searchQuery, selectedType, selectedCategoryId, selectedTag, selectedAccountId, dayFilter, customDate, activeMonth, viewMode, selectedCalendarDate, todayStr, yesterdayStr]);
 
-  // Group transactions by date
+  // Reset displayLimit on search / filter changes to keep interactions fluid, then load the rest in small, non-blocking batches
+  useEffect(() => {
+    setDisplayLimit(15);
+    setIsFullyLoaded(false);
+
+    let currentLimit = 15;
+    let timerId: any = null;
+
+    const loadNextBatch = () => {
+      if (!isMountedRef.current) return;
+
+      const totalCount = filteredTransactions.length;
+      if (currentLimit >= totalCount) {
+        setDisplayLimit(Infinity);
+        setIsFullyLoaded(true);
+        return;
+      }
+
+      // Add a chunk of 40 transactions
+      currentLimit = Math.min(currentLimit + 40, totalCount);
+      setDisplayLimit(currentLimit);
+
+      if (currentLimit < totalCount) {
+        timerId = setTimeout(loadNextBatch, 80); // yields event loop back to browser to process tab switches instantly
+      } else {
+        setDisplayLimit(Infinity);
+        setIsFullyLoaded(true);
+      }
+    };
+
+    // Start progressive loading after a small delay
+    timerId = setTimeout(loadNextBatch, 250);
+
+    return () => {
+      clearTimeout(timerId);
+    };
+  }, [searchQuery, selectedType, selectedCategoryId, selectedTag, selectedAccountId, dayFilter, activeMonth, viewMode, selectedCalendarDate, filteredTransactions.length]);
+
+  // Group transactions by date, progressively sliced up to displayLimit
   const groupedByDate = useMemo(() => {
     const groups: { [date: string]: Transaction[] } = {};
-    filteredTransactions.forEach(t => {
+    const visibleTransactions = filteredTransactions.slice(0, displayLimit);
+    visibleTransactions.forEach(t => {
       if (!groups[t.date]) groups[t.date] = [];
       groups[t.date].push(t);
     });
     return groups;
-  }, [filteredTransactions]);
+  }, [filteredTransactions, displayLimit]);
 
   const dates = Object.keys(groupedByDate).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
 
@@ -348,6 +476,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     return days;
   }, [activeMonth, transactions]);
 
+  const activeFilterCount = useMemo(() => {
+    return (dayFilter !== 'ALL' ? 1 : 0) +
+      (selectedType !== 'ALL' ? 1 : 0) +
+      (selectedCategoryId !== 'ALL' ? 1 : 0) +
+      (selectedAccountId !== 'ALL' ? 1 : 0) +
+      (selectedTag !== 'ALL' ? 1 : 0);
+  }, [dayFilter, selectedType, selectedCategoryId, selectedAccountId, selectedTag]);
+
   return (
     <div className="space-y-4 pb-24 max-w-2xl mx-auto">
       {/* Top Header & View Mode Switcher */}
@@ -362,26 +498,6 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         </div>
 
         <div className="flex items-center space-x-2">
-          {/* Cashew Importer Button */}
-          <button
-            onClick={() => setShowCashewModal(true)}
-            className="px-3 py-1.5 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center space-x-1.5 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition-all shadow-xs"
-            title="Import from Cashew App (CSV, SQLite, JSON)"
-          >
-            <Database size={14} className="text-amber-600 dark:text-amber-400" />
-            <span className="hidden sm:inline">Cashew Import</span>
-          </button>
-
-          {/* Bank SMS Quick Parser Button */}
-          <button
-            onClick={() => setShowSMSModal(true)}
-            className="px-3 py-1.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center space-x-1.5 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-all shadow-xs"
-            title="Import Indian Bank SMS Alerts"
-          >
-            <MessageSquareCode size={14} className="text-emerald-600 dark:text-emerald-400" />
-            <span className="hidden sm:inline">SMS Parser</span>
-          </button>
-
           {/* View Mode Toggle: Day Feed vs Daily Calendar */}
           <div className="flex items-center space-x-1 bg-slate-200/80 dark:bg-slate-800 p-1 rounded-2xl border border-slate-200/50 dark:border-slate-700/50">
             <button
@@ -410,147 +526,159 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         </div>
       </div>
 
-      {/* Day Filter Bar */}
-      <div className="bg-white dark:bg-slate-800 rounded-3xl p-3.5 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-            Filter by Day & Period
-          </span>
-          {dayFilter !== 'ALL' && (
-            <button
-              onClick={() => {
-                setDayFilter('ALL');
-                setCustomDate('');
-                setSelectedCalendarDate('');
-              }}
-              className="text-[11px] font-bold text-rose-500 hover:underline flex items-center space-x-0.5"
-            >
-              <X size={12} />
-              <span>Reset Date Filter</span>
-            </button>
-          )}
-        </div>
-
-        {/* Quick Day Selector Pills */}
-        <div className="flex items-center space-x-2 overflow-x-auto no-scrollbar pb-1">
-          {[
-            { id: 'ALL', label: 'All Days' },
-            { id: 'TODAY', label: 'Today' },
-            { id: 'YESTERDAY', label: 'Yesterday' },
-            { id: 'THIS_WEEK', label: 'This Week' },
-            { id: 'THIS_MONTH', label: 'This Month' },
-            { id: 'CUSTOM', label: 'Pick Day 📅' },
-          ].map(btn => (
-            <button
-              key={btn.id}
-              onClick={() => setDayFilter(btn.id as any)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all ${
-                dayFilter === btn.id
-                  ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-600/30'
-                  : 'bg-slate-100 dark:bg-slate-750 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-            >
-              {btn.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Custom Day Picker Input */}
-        {dayFilter === 'CUSTOM' && (
-          <div className="pt-1 flex flex-wrap items-center gap-2 animate-in fade-in-50">
-            <div className="w-56">
-              <CustomDatePicker
-                value={customDate}
-                onChange={d => setCustomDate(d)}
-                placeholder="Pick specific date..."
-                size="sm"
-              />
-            </div>
-            {customDate && (
-              <span className="text-xs text-slate-500 font-medium">
-                Showing transactions for {formatDayTitle(customDate)}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Search Input and Secondary Filters */}
-        <div className="pt-1 space-y-2 border-t border-slate-100 dark:border-slate-700/60">
-          <div className="relative">
-            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+      {/* Search & Day Filter Bar */}
+      <div className="bg-white dark:bg-slate-800 rounded-3xl p-3 sm:p-3.5 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-3">
+        {/* Main Search & Filters Toggle Row */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search merchant, notes, tags (#fuel), bank..."
-              className="w-full pl-9 pr-4 py-2 rounded-2xl bg-slate-100 dark:bg-slate-850 border border-transparent focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm outline-none transition-all"
+              placeholder="Search merchant, notes, tags (#fuel)..."
+              className="w-full pl-9 pr-12 py-2 rounded-2xl bg-slate-100 dark:bg-slate-850 border border-transparent focus:border-emerald-500/50 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm outline-none transition-all"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 Clear
               </button>
             )}
           </div>
-
-          {/* Filter Pills */}
-          <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1 text-xs items-center">
-            {/* Type Filter */}
-            <CustomSelect
-              value={selectedType}
-              onChange={val => setSelectedType(val)}
-              options={typeFilterOptions}
-              placeholder="All Types"
-              title="Filter by Type"
-              size="sm"
-              variant="pill"
-              className="shrink-0"
-            />
-
-            {/* Category Filter */}
-            <CustomSelect
-              value={selectedCategoryId}
-              onChange={val => setSelectedCategoryId(val)}
-              options={categoryFilterOptions}
-              placeholder="All Categories"
-              title="Filter by Category"
-              size="sm"
-              variant="pill"
-              searchable={true}
-              searchPlaceholder="Search categories..."
-              className="shrink-0"
-            />
-
-            {/* Account / Card Filter */}
-            <CustomSelect
-              value={selectedAccountId}
-              onChange={val => setSelectedAccountId(val)}
-              options={accountFilterOptions}
-              placeholder="All Accounts"
-              title="Filter by Account/Card"
-              size="sm"
-              variant="pill"
-              searchable={true}
-              className="shrink-0"
-            />
-
-            {/* Tag Filter */}
-            {allTags.length > 0 && (
-              <CustomSelect
-                value={selectedTag}
-                onChange={val => setSelectedTag(val)}
-                options={tagFilterOptions}
-                placeholder="All Tags"
-                title="Filter by Tag"
-                size="sm"
-                variant="pill"
-                className="shrink-0"
-              />
+          <button
+            onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
+            className={`p-2 rounded-2xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[38px] px-3.5 ${
+              isFiltersExpanded || activeFilterCount > 0
+                ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                : 'bg-white dark:bg-slate-800 border-slate-200/70 dark:border-slate-700/70 text-slate-700 dark:text-slate-300 hover:border-emerald-500'
+            }`}
+            title="Toggle Advanced Filters"
+          >
+            <SlidersHorizontal size={14} />
+            <span className="hidden sm:inline">Filters</span>
+            {activeFilterCount > 0 && (
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${isFiltersExpanded || activeFilterCount > 0 ? 'bg-white text-emerald-700' : 'bg-emerald-600 text-white'}`}>
+                {activeFilterCount}
+              </span>
             )}
-          </div>
+          </button>
         </div>
+
+        {/* Advanced Filters Section (Collapsible) */}
+        {(isFiltersExpanded || activeFilterCount > 0) && (
+          <div className="pt-2.5 space-y-3 border-t border-slate-100 dark:border-slate-750 animate-in fade-in slide-in-from-top-2 duration-200">
+            {/* Calendar Date Filter Range */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Filter by Date
+                </span>
+                {(customDate || dayFilter !== 'ALL') && (
+                  <button
+                    onClick={() => {
+                      setDayFilter('ALL');
+                      setCustomDate('');
+                      setSelectedCalendarDate('');
+                    }}
+                    className="px-2 py-0.5 text-[10px] font-bold bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition-all flex items-center space-x-1 shadow-xs cursor-pointer active:scale-95"
+                  >
+                    <X size={10} />
+                    <span>Clear Date</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Custom Date Picker Input */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="w-56">
+                  <CustomDatePicker
+                    value={customDate}
+                    onChange={d => {
+                      setCustomDate(d);
+                      if (d) {
+                        setDayFilter('CUSTOM');
+                      } else {
+                        setDayFilter('ALL');
+                      }
+                    }}
+                    placeholder="Pick specific date..."
+                    size="sm"
+                  />
+                </div>
+                {customDate && (
+                  <span className="text-xs text-slate-500 font-medium">
+                    Showing transactions for {formatDayTitle(customDate)}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Filter Pills / Select Dropdowns */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                Filter by Category, Type & Account
+              </span>
+              <div className="flex space-x-1.5 overflow-x-auto no-scrollbar pb-1 text-xs items-center">
+                {/* Type Filter */}
+                <CustomSelect
+                  value={selectedType}
+                  onChange={val => setSelectedType(val)}
+                  options={typeFilterOptions}
+                  placeholder="All Types"
+                  title="Filter by Type"
+                  size="sm"
+                  variant="pill"
+                  className="shrink-0"
+                />
+
+                {/* Category Filter */}
+                <CustomSelect
+                  value={selectedCategoryId}
+                  onChange={val => setSelectedCategoryId(val)}
+                  options={categoryFilterOptions}
+                  placeholder="All Categories"
+                  title="Filter by Category"
+                  size="sm"
+                  variant="pill"
+                  searchable={true}
+                  searchPlaceholder="Search categories..."
+                  className="shrink-0"
+                />
+
+                {/* Account / Card Filter */}
+                <CustomSelect
+                  value={selectedAccountId}
+                  onChange={val => setSelectedAccountId(val)}
+                  options={accountFilterOptions}
+                  placeholder="All Accounts"
+                  title="Filter by Account/Card"
+                  size="sm"
+                  variant="pill"
+                  searchable={true}
+                  className="shrink-0"
+                />
+
+                {/* Tag Filter */}
+                {allTags.length > 0 && (
+                  <CustomSelect
+                    value={selectedTag}
+                    onChange={val => setSelectedTag(val)}
+                    options={tagFilterOptions}
+                    placeholder="All Tags"
+                    title="Filter by Tag"
+                    size="sm"
+                    variant="pill"
+                    className="shrink-0"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Active Account Filter Banner */}
@@ -622,6 +750,87 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         </div>
       </div>
 
+      {/* Multi-Selection Control Bar directly below Net Balance */}
+      {!isSelectionMode ? (
+        <div className="flex items-center justify-between px-1 pt-1">
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            {filteredTransactions.length} {filteredTransactions.length === 1 ? 'transaction' : 'transactions'}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setIsSelectionMode(true);
+              setSelectedTxIds(new Set());
+            }}
+            className="px-3.5 py-1.5 rounded-2xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/80 text-xs font-bold flex items-center space-x-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
+            title="Enable multi-select to delete multiple transactions"
+          >
+            <CheckCircle2 size={14} className="text-purple-600 dark:text-purple-400" />
+            <span>Select</span>
+          </button>
+        </div>
+      ) : (
+        /* Bulk Selection Action Bar */
+        <div className="bg-purple-50 dark:bg-purple-950/40 rounded-3xl p-3 px-4 border border-purple-200 dark:border-purple-800/60 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in slide-in-from-top-2">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-xl bg-purple-200 dark:bg-purple-800 text-purple-700 dark:text-purple-300 flex items-center justify-center font-bold">
+              <CheckCircle2 size={16} />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-purple-900 dark:text-purple-100">
+                {selectedTxIds.size} Selected
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => {
+                const allVisibleIds = filteredTransactions.map(t => t.id);
+                if (selectedTxIds.size === allVisibleIds.length && allVisibleIds.length > 0) {
+                  setSelectedTxIds(new Set());
+                } else {
+                  setSelectedTxIds(new Set(allVisibleIds));
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-800 text-xs font-bold flex-1 sm:flex-none text-center cursor-pointer"
+            >
+              {selectedTxIds.size === filteredTransactions.length && filteredTransactions.length > 0 ? 'Deselect All' : 'Select All Visible'}
+            </button>
+            <button
+              type="button"
+              disabled={selectedTxIds.size === 0}
+              onClick={() => {
+                if (selectedTxIds.size > 0) {
+                  setDeleteTarget({
+                    type: 'bulk',
+                    ids: Array.from(selectedTxIds),
+                    count: selectedTxIds.size,
+                    title: `Delete ${selectedTxIds.size} Transactions?`,
+                    subtitle: `All ${selectedTxIds.size} selected transactions will be moved to the Trash Bin.`,
+                  });
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold flex items-center justify-center space-x-1.5 flex-1 sm:flex-none disabled:opacity-50 disabled:cursor-not-allowed shadow-xs transition-colors cursor-pointer"
+            >
+              <Trash2 size={14} />
+              <span>Delete ({selectedTxIds.size})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsSelectionMode(false);
+                setSelectedTxIds(new Set());
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-750 text-slate-700 dark:text-slate-300 text-xs font-bold hover:bg-slate-300 dark:hover:bg-slate-700 cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* VIEW MODE 1: Interactive Calendar Matrix */}
       {viewMode === 'calendar' && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-4 sm:p-5 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-3 animate-in fade-in-50">
@@ -630,9 +839,6 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 Daily Calendar Spend Map
               </h3>
-              <p className="text-[11px] text-slate-500">
-                Tap on any date to inspect transactions for that day
-              </p>
             </div>
             {selectedCalendarDate && (
               <button
@@ -716,8 +922,26 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           </button>
         </div>
       ) : (
-        dates.map(dateStr => {
-          const dayItems = groupedByDate[dateStr];
+        dates.map((dateStr, dIdx) => {
+          const dayItems = [...groupedByDate[dateStr]].sort((a, b) => {
+            const timeA = a.time || '00:00';
+            const timeB = b.time || '00:00';
+            
+            // Primary sort by time of day descending (newest time first)
+            const timeCompare = timeB.localeCompare(timeA);
+            if (timeCompare !== 0) {
+              return timeCompare;
+            }
+
+            // Fallback to timestamp if times are identical
+            const tsA = a.timestamp || 0;
+            const tsB = b.timestamp || 0;
+            if (tsA && tsB && tsA !== tsB) {
+              return tsB - tsA;
+            }
+            
+            return 0;
+          });
           const dayExpense = dayItems.reduce((sum, item) => {
             if (item.type === 'EXPENSE') return sum + item.amount;
             return sum;
@@ -729,7 +953,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
           return (
             <div
-              key={dateStr}
+              key={`tx_date_${dateStr}_${dIdx}`}
               className="bg-white dark:bg-slate-800 rounded-3xl p-4 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-2"
             >
               {/* Day Header with Date & Net Day Totals */}
@@ -762,151 +986,258 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
 
               {/* Transactions in This Day with 3D Icons and Full Details */}
               <div className="divide-y divide-slate-100 dark:divide-slate-700/50">
-                {dayItems.map(t => {
+                {dayItems.map((t, idx) => {
                   const isIncome = t.type === 'INCOME' || t.type === 'MONEY_LENT_REPAYMENT' || t.type === 'INVESTMENT_WITHDRAWAL';
                   const isTransfer = t.type === 'TRANSFER' || t.type === 'CARD_PAYMENT' || t.type === 'INVESTMENT_CONTRIBUTION';
                   const cat = categories.find(c => c.id === t.categoryId);
                   const acc = accounts.find(a => a.id === t.accountId);
                   const card = creditCards.find(c => c.id === t.creditCardId);
                   const toAcc = accounts.find(a => a.id === t.toAccountId);
+                  const toCard = creditCards.find(c => c.id === t.toCreditCardId);
                   const accentColor = card ? card.color || '#9333ea' : acc ? acc.color || '#10b981' : '#64748b';
 
                   return (
                     <div
-                      key={t.id}
-                      onClick={() => onSelectTransaction(t)}
-                      className="py-3 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-750 px-2 rounded-2xl transition-colors group"
+                      key={`tx_${t.id}_${idx}`}
+                      onPointerDown={(e) => handlePointerDown(t, e)}
+                      onPointerUp={handlePointerUpOrLeave}
+                      onPointerLeave={handlePointerUpOrLeave}
+                      onPointerCancel={handlePointerUpOrLeave}
+                      onContextMenu={(e) => {
+                        // Prevent context menu on long press
+                        if (wasLongPressRef.current || isSelectionMode) {
+                          e.preventDefault();
+                        }
+                      }}
+                      onClick={(e) => {
+                        if (wasLongPressRef.current) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          return;
+                        }
+                        if (isSelectionMode) {
+                          const newSet = new Set(selectedTxIds);
+                          if (newSet.has(t.id)) newSet.delete(t.id);
+                          else newSet.add(t.id);
+                          setSelectedTxIds(newSet);
+                        } else {
+                          onSelectTransaction(t);
+                        }
+                      }}
+                      className={`p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-750/70 rounded-2xl transition-colors group select-none space-y-2 border border-slate-100 dark:border-slate-800 ${
+                        isSelectionMode && selectedTxIds.has(t.id) ? 'bg-purple-50/50 dark:bg-purple-900/20 border-purple-300 dark:border-purple-800' : 'bg-white dark:bg-slate-900'
+                      }`}
                     >
-                      {/* Left: 3D Category Icon + Merchant & Badges */}
-                      <div className="flex items-center space-x-3 min-w-0">
-                        <div className="relative shrink-0">
-                          <Category3DIcon
-                            name={cat?.icon || (isIncome ? 'ArrowDownLeft' : isTransfer ? 'ArrowRightLeft' : 'Receipt')}
-                            categoryName={t.categoryName || cat?.name}
-                            color={cat?.color || (isIncome ? '#10b981' : '#64748b')}
-                            size="md"
-                            glow={true}
-                            interactive={true}
-                          />
-                        </div>
-
-                        <div className="min-w-0">
-                          <div className="flex items-center space-x-1.5">
-                            <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-                              {t.merchantName || t.categoryName || t.notes || 'Transaction'}
-                            </p>
-                            {t.receiptUrl && (
-                              <Paperclip size={12} className="text-slate-400 shrink-0" title="Has receipt photo" />
-                            )}
-                          </div>
-
-                          {/* Detail Badges: Category, Subcategory, Splits, 3D Payment App, 3D Bank/Card */}
-                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">
-                              {t.splits && t.splits.length > 0 ? `Split (${t.splits.length} items)` : (t.categoryName || t.type)}
-                            </span>
-
-                            {t.splits && t.splits.length > 0 && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-bold">
-                                ✂️ Split
-                              </span>
-                            )}
-
-                            {t.originalCurrency && t.originalCurrency !== 'INR' && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 font-semibold">
-                                {t.originalAmount} {t.originalCurrency}
-                              </span>
-                            )}
-
-                            {t.subcategory && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                                {t.subcategory}
-                              </span>
-                            )}
-
-                            {/* Mini 3D Payment Channel Badge */}
-                            {t.paymentAppName && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSearchQuery(t.paymentAppName || '');
-                                }}
-                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
-                                title={`Filter by ${t.paymentAppName}`}
-                              >
-                                <PaymentApp3DIcon name={t.paymentAppName} size="xs" glow={false} />
-                                <span>{t.paymentAppName}</span>
-                              </button>
-                            )}
-
-                            {/* Mini 3D Bank / Card Badge */}
-                            {(t.accountName || t.creditCardName) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const accId = t.accountId || (acc ? acc.id : '');
-                                  const cardId = t.creditCardId || (card ? card.id : '');
-                                  setSelectedAccountId(cardId || accId || 'ALL');
-                                }}
-                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold transition-colors cursor-pointer"
-                                style={{ color: accentColor }}
-                                title={`Filter transactions for ${t.creditCardName || t.accountName}`}
-                              >
-                                <Bank3DIcon
-                                  institution={card ? card.issuer : acc?.institution}
-                                  type={card ? 'CREDIT_CARD' : acc?.type}
-                                  color={accentColor}
-                                  size="xs"
-                                  glow={false}
-                                />
-                                <span>
-                                  {t.type === 'TRANSFER' && t.toAccountName
-                                    ? `${t.accountName} ➔ ${t.toAccountName}`
-                                    : t.creditCardName || t.accountName}
-                                </span>
-                              </button>
-                            )}
-
-                            {/* Tags */}
-                            {(t.tags || []).slice(0, 2).map(tag => (
-                              <span
-                                key={tag}
-                                className="text-[10px] px-1.5 py-0.2 rounded-full bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-300 font-medium"
-                              >
-                                #{tag}
-                              </span>
-                            ))}
-                          </div>
-
-                          {/* Notes inside the transaction card */}
-                          {t.notes && (
-                            <div className="flex items-center space-x-1.5 text-[11px] text-amber-900 dark:text-amber-200/90 italic mt-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 max-w-sm sm:max-w-md w-fit">
-                              <span className="text-amber-500 font-bold shrink-0 text-xs">📝</span>
-                              <span className="truncate">{t.notes}</span>
+                      {/* Top Row: Left (Checkbox + Icon + Merchant Name + Type Badge) & Right (Amount + Time) */}
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <div className="flex items-center space-x-2.5 min-w-0">
+                          {isSelectionMode && (
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                              selectedTxIds.has(t.id) 
+                                ? 'bg-purple-500 border-purple-500 text-white' 
+                                : 'border-slate-300 dark:border-slate-600 bg-transparent text-transparent'
+                            }`}>
+                              <CheckCircle2 size={12} className={selectedTxIds.has(t.id) ? 'block' : 'hidden'} />
                             </div>
                           )}
+                          <div className="relative shrink-0">
+                            <Category3DIcon
+                              name={cat?.icon || (isIncome ? 'ArrowDownLeft' : isTransfer ? 'ArrowRightLeft' : 'Receipt')}
+                              categoryName={t.categoryName || cat?.name}
+                              color={cat?.color || (isIncome ? '#10b981' : '#64748b')}
+                              size="sm"
+                              glow={true}
+                              interactive={true}
+                            />
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className="flex items-center space-x-1.5 flex-wrap gap-y-0.5">
+                              <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate max-w-[130px] xs:max-w-[180px] sm:max-w-none">
+                                {t.merchantName || t.categoryName || t.notes || 'Transaction'}
+                              </p>
+                              <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.2 rounded shrink-0 ${
+                                isIncome ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
+                                isTransfer ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400' :
+                                t.type === 'CARD_PAYMENT' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400' :
+                                'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400'
+                              }`}>
+                                {t.type === 'CARD_PAYMENT' ? 'Card Bill' : t.type === 'MONEY_BORROWED' ? 'Borrowed' : t.type === 'MONEY_LENT' ? 'Lent' : isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense'}
+                              </span>
+                              {t.receiptUrl && (
+                                <Paperclip size={12} className="text-slate-400 shrink-0" title="Has receipt photo" />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Amount & Time */}
+                        <div className="text-right shrink-0">
+                          <span
+                            className={`text-xs sm:text-sm font-black block ${
+                              isIncome
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : isTransfer
+                                ? 'text-blue-600 dark:text-blue-400'
+                                : 'text-slate-900 dark:text-white'
+                            }`}
+                          >
+                            {isIncome ? `+${formatINR(t.amount)}` : isTransfer ? formatINR(t.amount) : `-${formatINR(t.amount)}`}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium block">
+                            {format12HourTime(t.time, t.timestamp)}
+                          </span>
                         </div>
                       </div>
 
-                      {/* Right: Amount & Time */}
-                      <div className="text-right shrink-0 pl-3">
-                        <span
-                          className={`text-xs sm:text-sm font-black block ${
-                            isIncome
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : isTransfer
-                              ? 'text-blue-600 dark:text-blue-400'
-                              : 'text-slate-900 dark:text-white'
-                          }`}
-                        >
-                          {isIncome ? `+${formatINR(t.amount)}` : isTransfer ? formatINR(t.amount) : `-${formatINR(t.amount)}`}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-medium">
-                          {format12HourTime(t.time, t.timestamp)}
-                        </span>
+                      {/* Bottom Row: Detail Badges & Quick Action Buttons */}
+                      <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-100/80 dark:border-slate-800 text-[11px]">
+                        <div className="flex flex-wrap items-center gap-1.5 min-w-0 text-slate-500 dark:text-slate-400">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300">
+                            {t.splits && t.splits.length > 0 ? `Split (${t.splits.length})` : (t.categoryName || t.type)}
+                          </span>
+
+                          {t.splits && t.splits.length > 0 && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-bold">
+                              ✂️ Split
+                            </span>
+                          )}
+
+                          {t.originalCurrency && t.originalCurrency !== 'INR' && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 font-semibold">
+                              {t.originalAmount} {t.originalCurrency}
+                            </span>
+                          )}
+
+                          {t.subcategory && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                              {t.subcategory}
+                            </span>
+                          )}
+
+                          {/* Mini 3D Payment Channel Badge */}
+                          {t.paymentAppName && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSearchQuery(t.paymentAppName || '');
+                              }}
+                              className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                              title={`Filter by ${t.paymentAppName}`}
+                            >
+                              <PaymentApp3DIcon name={t.paymentAppName} size="xs" glow={false} />
+                              <span>{t.paymentAppName}</span>
+                            </button>
+                          )}
+
+                          {/* Mini 3D Bank / Card Badge */}
+                          {(t.accountId || t.creditCardId || t.toAccountId || t.accountName || t.creditCardName) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const accId = t.accountId || (acc ? acc.id : '');
+                                const cardId = t.creditCardId || (card ? card.id : '');
+                                setSelectedAccountId(cardId || accId || 'ALL');
+                              }}
+                              className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[10px] font-semibold transition-colors cursor-pointer"
+                              style={{ color: accentColor }}
+                              title={`Filter transactions for ${t.creditCardName || t.accountName}`}
+                            >
+                              <Bank3DIcon
+                                institution={card ? card.issuer : acc?.institution}
+                                type={card ? 'CREDIT_CARD' : acc?.type}
+                                color={accentColor}
+                                size="xs"
+                                glow={false}
+                              />
+                              <span className="truncate max-w-[120px] sm:max-w-none">
+                                {t.type === 'TRANSFER' || t.type === 'CARD_PAYMENT'
+                                  ? (() => {
+                                      let fromName = 'External';
+                                      let toName = 'External';
+
+                                      if (t.type === 'CARD_PAYMENT') {
+                                        fromName = t.accountName || acc?.name || 'External';
+                                        toName = t.creditCardName || card?.name || 'External';
+                                      } else {
+                                        fromName = t.accountName || acc?.name || (t.type === 'CARD_PAYMENT' && !acc ? t.creditCardName || card?.name : 'External');
+                                        toName = t.toAccountName || toAcc?.name || (t.type === 'CARD_PAYMENT' ? t.creditCardName || card?.name : 'External');
+                                      }
+                                      
+                                      if (fromName !== 'External' && toName !== 'External') {
+                                        return `${fromName} ➔ ${toName}`;
+                                      } else if (fromName !== 'External') {
+                                        return `${fromName} ➔ External`;
+                                      } else if (toName !== 'External') {
+                                        return `External ➔ ${toName}`;
+                                      }
+                                      return t.creditCardName || card?.name || t.accountName || acc?.name || 'Transfer';
+                                    })()
+                                  : t.creditCardName || card?.name || t.accountName || acc?.name || 'Account'}
+                              </span>
+                            </button>
+                          )}
+
+                          {/* Tags */}
+                          {(t.tags || []).slice(0, 2).map((tag, tIdx) => (
+                            <span
+                              key={`${tag}-${tIdx}`}
+                              className="text-[10px] px-1.5 py-0.2 rounded-full bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-300 font-medium"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Quick Edit & Delete Action Buttons */}
+                        {!isSelectionMode && (
+                          <div className="flex items-center space-x-1 shrink-0 ml-auto">
+                            {onEditTransaction && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditTransaction(t);
+                                }}
+                                className="p-1 sm:p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-all cursor-pointer active:scale-95 shadow-2xs border border-slate-200/60 dark:border-slate-700/60"
+                                title="Edit transaction"
+                              >
+                                <Edit2 size={12} />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget({
+                                  type: 'single',
+                                  transaction: t,
+                                  ids: [t.id],
+                                  count: 1,
+                                  title: `Delete "${t.merchantName || t.categoryName || t.notes || 'Transaction'}"?`,
+                                  amount: isIncome ? `+${formatINR(t.amount)}` : isTransfer ? formatINR(t.amount) : `-${formatINR(t.amount)}`,
+                                  subtitle: `${t.date} • ${t.type.replace(/_/g, ' ')}`,
+                                  badge: t.categoryName || 'General',
+                                });
+                              }}
+                              className="p-1 sm:p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 transition-all cursor-pointer active:scale-95 shadow-2xs border border-rose-200/60 dark:border-rose-800/60"
+                              title="Move to Trash"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        )}
                       </div>
+
+                      {/* Notes inside the transaction card */}
+                      {t.notes && (
+                        <div className="flex items-center space-x-1.5 text-[11px] text-amber-900 dark:text-amber-200/90 italic px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 max-w-full overflow-hidden">
+                          <span className="text-amber-500 font-bold shrink-0 text-xs">📝</span>
+                          <span className="truncate">{t.notes}</span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -916,16 +1247,336 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
         })
       )}
 
-      {/* SMS Import Modal */}
-      <SMSImportModal
-        isOpen={showSMSModal}
-        onClose={() => setShowSMSModal(false)}
-      />
+      {/* Progressive loading feedback indicator */}
+      {!isFullyLoaded && filteredTransactions.length > displayLimit && (
+        <div className="flex flex-col items-center justify-center space-y-1.5 py-6 text-xs text-slate-400 dark:text-slate-500 animate-pulse">
+          <div className="flex items-center space-x-2">
+            <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+            <span className="font-semibold text-slate-600 dark:text-slate-400">Loading remaining transactions...</span>
+          </div>
+          <p className="text-[10px] text-slate-400/80">Showing the first {displayLimit} of {filteredTransactions.length} records instantly</p>
+        </div>
+      )}
 
-      {/* Cashew Import Modal */}
-      <CashewImportModal
-        isOpen={showCashewModal}
-        onClose={() => setShowCashewModal(false)}
+
+      {/* Hold-to-Preview Overlay */}
+      {previewTx && (() => {
+        const previewCat = categories.find(c => c.id === previewTx.categoryId);
+        const isIncome = previewTx.type === 'INCOME' || previewTx.type === 'MONEY_LENT_REPAYMENT' || previewTx.type === 'INVESTMENT_WITHDRAWAL' || previewTx.type === 'REFUND';
+        const isTransfer = previewTx.type === 'TRANSFER' || previewTx.type === 'CARD_PAYMENT' || previewTx.type === 'INVESTMENT_CONTRIBUTION';
+        
+        // Resolve accounts/cards/payment apps to guarantee 100% identical data mapping fallback as the Detail Modal
+        const resolvedAccountName = previewTx.accountName || (previewTx.accountId ? accounts.find(a => a.id === previewTx.accountId)?.name : undefined);
+        const resolvedCreditCardName = previewTx.creditCardName || (previewTx.creditCardId ? creditCards.find(c => c.id === previewTx.creditCardId)?.name : undefined);
+        const resolvedToAccountName = previewTx.toAccountName || (previewTx.toAccountId ? accounts.find(a => a.id === previewTx.toAccountId)?.name : undefined);
+        const resolvedPaymentAppName = previewTx.paymentAppName;
+
+        const iconColor = previewCat?.color || (isIncome ? '#10b981' : isTransfer ? '#3b82f6' : '#64748b');
+        const iconName = previewCat?.icon || (isIncome ? 'ArrowDownLeft' : isTransfer ? 'ArrowRightLeft' : 'Receipt');
+        
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/70 dark:bg-black/80 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200 pointer-events-none">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[32px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.35)] dark:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] border border-slate-100 dark:border-slate-800/80 overflow-hidden relative flex flex-col">
+              {/* Top ambient status border */}
+              <div className="h-1 bg-gradient-to-r from-emerald-500 via-sky-500 to-indigo-500 opacity-90 w-full" />
+              
+              {/* Header Label */}
+              <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  Transaction Preview
+                </span>
+                <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full ${
+                  isIncome ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' :
+                  isTransfer ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400' :
+                  'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                }`}>
+                  {previewTx.type === 'CARD_PAYMENT' ? 'Card Bill' : previewTx.type === 'MONEY_BORROWED' ? 'Borrowed' : previewTx.type === 'MONEY_LENT' ? 'Lent' : isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense'}
+                </span>
+              </div>
+
+              {/* Centered Hero Amount & Merchant Name (Matches TransactionDetailModal style) */}
+              <div className="px-6 py-5 text-center bg-slate-50/50 dark:bg-slate-850/40 border-b border-slate-100 dark:border-slate-800/60 flex flex-col items-center">
+                <div className="mb-2.5">
+                  <Category3DIcon
+                    name={iconName}
+                    categoryName={previewTx.categoryName || previewCat?.name}
+                    color={iconColor}
+                    size="xl"
+                    glow={true}
+                  />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white max-w-[320px] truncate">
+                  {previewTx.merchantName || previewTx.categoryName || 'Transaction'}
+                </h2>
+                <div className={`text-2xl font-black mt-1 ${
+                  isIncome
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : isTransfer
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-slate-900 dark:text-white'
+                }`}>
+                  {isIncome ? `+${formatINR(previewTx.amount)}` : isTransfer ? formatINR(previewTx.amount) : `-${formatINR(previewTx.amount)}`}
+                </div>
+              </div>
+
+              {/* Symmetric Info Fields (100% Consistent with TransactionDetailModal) */}
+              <div className="p-5 space-y-3.5 text-xs">
+                {/* Date & Time */}
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 flex items-center font-semibold text-[11px]">
+                    <CalendarIcon size={13} className="mr-1.5 text-slate-400" /> Date & Time
+                  </span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                    {previewTx.date} at {format12HourTime(previewTx.time, previewTx.timestamp)}
+                  </span>
+                </div>
+
+                {/* Category */}
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 flex items-center font-semibold text-[11px]">
+                    <List size={13} className="mr-1.5 text-slate-400" /> Category
+                  </span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                    {previewTx.categoryName || 'General'} {previewTx.subcategory && `(${previewTx.subcategory})`}
+                  </span>
+                </div>
+
+                {/* Conditional Account Fields */}
+                {previewTx.type === 'CARD_PAYMENT' ? (
+                  <>
+                    {resolvedAccountName && (
+                      <div className="flex items-center justify-between animate-in fade-in duration-150">
+                        <span className="text-slate-500 flex items-center font-semibold text-[11px]">
+                          <Building size={13} className="mr-1.5 text-slate-400" /> Paid From
+                        </span>
+                        <div className="flex items-center space-x-1.5 font-bold text-slate-800 dark:text-slate-200">
+                          <Bank3DIcon
+                            name="Building2"
+                            institution={resolvedAccountName}
+                            color="#059669"
+                            size="xs"
+                          />
+                          <span>{resolvedAccountName}</span>
+                        </div>
+                      </div>
+                    )}
+                    {resolvedCreditCardName && (
+                      <div className="flex items-center justify-between animate-in fade-in duration-150">
+                        <span className="text-slate-500 flex items-center font-semibold text-[11px]">
+                          <CreditCard size={13} className="mr-1.5 text-slate-400" /> Paid To Card
+                        </span>
+                        <div className="flex items-center space-x-1.5 font-bold text-slate-800 dark:text-slate-200">
+                          <Bank3DIcon
+                            name="CreditCard"
+                            institution={resolvedCreditCardName}
+                            color="#9333ea"
+                            size="xs"
+                          />
+                          <span>{resolvedCreditCardName}</span>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : previewTx.type === 'TRANSFER' ? (
+                  <>
+                    {(resolvedAccountName || resolvedCreditCardName) && (
+                      <div className="flex items-center justify-between animate-in fade-in duration-150">
+                        <span className="text-slate-500 flex items-center font-semibold text-[11px]">
+                          <Building size={13} className="mr-1.5 text-slate-400" /> Transferred From
+                        </span>
+                        <div className="flex items-center space-x-1.5 font-bold text-slate-800 dark:text-slate-200">
+                          <Bank3DIcon
+                            name={previewTx.creditCardId && !previewTx.accountId ? 'CreditCard' : 'Building2'}
+                            institution={resolvedAccountName || resolvedCreditCardName}
+                            color={previewTx.creditCardId && !previewTx.accountId ? '#9333ea' : '#059669'}
+                            size="xs"
+                          />
+                          <span>{resolvedAccountName || resolvedCreditCardName}</span>
+                        </div>
+                      </div>
+                    )}
+                    {resolvedToAccountName && (
+                      <div className="flex items-center justify-between animate-in fade-in duration-150">
+                        <span className="text-slate-500 flex items-center font-semibold text-[11px]">
+                          <ArrowRightLeft size={13} className="mr-1.5 text-slate-400" /> Transferred To
+                        </span>
+                        <div className="flex items-center space-x-1.5 font-bold text-slate-800 dark:text-slate-200">
+                          <Bank3DIcon
+                            name="Building2"
+                            institution={resolvedToAccountName}
+                            color="#2563eb"
+                            size="xs"
+                          />
+                          <span>{resolvedToAccountName}</span>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {(resolvedAccountName || resolvedCreditCardName) && (
+                      <div className="flex items-center justify-between animate-in fade-in duration-150">
+                        <span className="text-slate-500 flex items-center font-semibold text-[11px]">
+                          <Building size={13} className="mr-1.5 text-slate-400" /> Account / Card
+                        </span>
+                        <div className="flex items-center space-x-1.5 font-bold text-slate-800 dark:text-slate-200">
+                          <Bank3DIcon
+                            name={previewTx.creditCardId ? 'CreditCard' : 'Building2'}
+                            institution={resolvedCreditCardName || resolvedAccountName}
+                            color={previewTx.creditCardId ? '#9333ea' : '#059669'}
+                            size="xs"
+                          />
+                          <span>{resolvedCreditCardName || resolvedAccountName}</span>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Channel / Payment App */}
+                {resolvedPaymentAppName && (
+                  <div className="flex items-center justify-between animate-in fade-in duration-150">
+                    <span className="text-slate-500 flex items-center font-semibold text-[11px]">
+                      <Sparkles size={13} className="mr-1.5 text-slate-400" /> Channel
+                    </span>
+                    <div className="flex items-center space-x-1.5 font-bold text-slate-800 dark:text-slate-200">
+                      <PaymentApp3DIcon
+                        name="Smartphone"
+                        appName={resolvedPaymentAppName}
+                        size="xs"
+                      />
+                      <span>{resolvedPaymentAppName}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Debt Details */}
+                {previewTx.debtPersonName && (
+                  <div className="bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/10 dark:border-rose-500/20 rounded-2xl p-3 text-xs space-y-1.5">
+                    <div className="flex justify-between items-center border-b border-rose-500/10 pb-1">
+                      <span className="font-bold text-rose-600 dark:text-rose-400 uppercase text-[9px] tracking-wider">Debt Engagement</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
+                        previewTx.isDebtSettled 
+                          ? 'bg-emerald-100/80 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400' 
+                          : 'bg-amber-100/80 dark:bg-amber-950/50 text-amber-700'
+                      }`}>
+                        {previewTx.isDebtSettled ? 'Settled' : 'Pending'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-slate-600 dark:text-slate-300 font-medium">
+                      <span>Counterparty:</span>
+                      <span className="font-black text-slate-800 dark:text-slate-100">{previewTx.debtPersonName}</span>
+                    </div>
+                    {previewTx.debtDueDate && (
+                      <div className="flex justify-between text-slate-600 dark:text-slate-300 font-medium">
+                        <span>Expected Due:</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-100">{previewTx.debtDueDate}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Splits breakdown */}
+                {previewTx.splits && previewTx.splits.length > 0 && (
+                  <div className="bg-purple-500/5 dark:bg-purple-500/10 border border-purple-500/10 dark:border-purple-500/20 rounded-2xl p-3 text-xs space-y-2">
+                    <span className="font-extrabold text-purple-600 dark:text-purple-400 uppercase text-[9px] tracking-wider block">
+                      Bill Splits ({previewTx.splits.length})
+                    </span>
+                    <div className="space-y-1.5 max-h-[85px] overflow-y-auto custom-scrollbar">
+                      {previewTx.splits.map((s, idx) => (
+                        <div key={`${s.notes || 'split'}-${idx}`} className="flex justify-between items-center text-slate-600 dark:text-slate-300">
+                          <span className="truncate max-w-[200px] font-medium">{s.notes || `Person ${idx + 1}`}</span>
+                          <span className="font-black text-slate-800 dark:text-slate-200">{formatINR(s.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Notes Block */}
+                {previewTx.notes && (
+                  <div className="p-3 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 text-xs text-slate-800 dark:text-slate-200 italic leading-relaxed whitespace-pre-wrap">
+                    "{previewTx.notes}"
+                  </div>
+                )}
+
+                {/* Tags block */}
+                {previewTx.tags && previewTx.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {previewTx.tags.map((t, idx) => (
+                      <span
+                        key={`tag_${t}_${idx}`}
+                        className="px-2 py-0.5 rounded-full text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer row with status badging */}
+              <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/40 dark:bg-slate-900/40 flex items-center justify-between">
+                <div className="flex items-center space-x-1.5">
+                  {previewTx.isAutoRecorded && (
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold">
+                      SMS Auto
+                    </span>
+                  )}
+                  {previewTx.recurringId && (
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold">
+                      Recurring
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 font-bold animate-pulse">
+                  Release pointer to close
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) {
+            deleteTransactions(deleteTarget.ids);
+            if (deleteTarget.type === 'bulk') {
+              setSelectedTxIds(new Set());
+              setIsSelectionMode(false);
+            }
+            setDeleteTarget(null);
+          }
+        }}
+        title={
+          deleteTarget?.type === 'bulk'
+            ? `Delete ${deleteTarget.count} Transactions?`
+            : 'Delete Transaction?'
+        }
+        description={
+          deleteTarget?.type === 'bulk'
+            ? `Are you sure you want to move all ${deleteTarget.count} selected transactions to the Trash Bin? You can restore them anytime from More → Trash Bin.`
+            : 'Are you sure you want to move this transaction to the Trash Bin? You can restore it anytime from More → Trash Bin.'
+        }
+        itemDetails={
+          deleteTarget
+            ? {
+                title: deleteTarget.title,
+                amount: deleteTarget.amount,
+                subtitle: deleteTarget.subtitle,
+                badge: deleteTarget.badge,
+              }
+            : undefined
+        }
+        confirmLabel={
+          deleteTarget?.type === 'bulk'
+            ? `Delete ${deleteTarget.count} Items`
+            : 'Move to Trash'
+        }
       />
     </div>
   );

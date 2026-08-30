@@ -236,8 +236,8 @@ export const InsightsView: React.FC = () => {
               <p className="text-xs text-slate-400 text-center py-6">No expenses logged for {activeMonth}</p>
             ) : (
               <div className="space-y-3">
-                {categorySpending.map(cat => (
-                  <div key={cat.categoryId} className="space-y-1.5 p-2 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors">
+                {categorySpending.map((cat, idx) => (
+                  <div key={`ins_cat_${cat.categoryId || 'cat'}_${idx}`} className="space-y-1.5 p-2 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors">
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center space-x-2.5">
                         <Category3DIcon
@@ -291,7 +291,7 @@ export const InsightsView: React.FC = () => {
               </h3>
               <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
                 {topMerchants.map(([name, amount], idx) => (
-                  <div key={name} className="py-2.5 flex items-center justify-between text-xs">
+                  <div key={`top_m_${name || 'm'}_${idx}`} className="py-2.5 flex items-center justify-between text-xs">
                     <span className="font-semibold text-slate-800 dark:text-slate-200">
                       {idx + 1}. {name}
                     </span>

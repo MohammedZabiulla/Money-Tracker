@@ -37,7 +37,7 @@ export const LockScreen: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950 text-white flex flex-col items-center justify-between p-6 select-none">
+    <div className="fixed inset-0 z-[9999] bg-slate-950 text-white flex flex-col items-center justify-between p-6 select-none">
       <div className="flex flex-col items-center mt-12 space-y-3">
         <div className="w-16 h-16 rounded-3xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
           <Lock size={32} />

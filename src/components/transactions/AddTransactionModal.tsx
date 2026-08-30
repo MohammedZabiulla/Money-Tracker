@@ -1,18 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
-import { TransactionType, Category, Account, CreditCard, PaymentApp, SplitItem, RecurrenceFrequency, TransactionTemplate } from '../../types';
-import { formatINR, CURRENCY_RATES, convertCurrency, formatForeignCurrency } from '../../lib/currency';
-import { parseBankSMS } from '../../lib/smsParser';
-import { IconHelper, Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
+import { TransactionType, SplitItem, RecurrenceFrequency, TransactionTemplate } from '../../types';
+import { formatINR, CURRENCY_RATES } from '../../lib/currency';
+import { Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
 import { CategoryManagementModal } from '../categories/CategoryManagementModal';
 import { TemplateManagementModal } from '../templates/TemplateManagementModal';
-import { NetworkLogo } from '../common/CardVisual';
 import { learnMerchantSuggestion, detectDuplicateTransaction } from '../../lib/accountingEngine';
 import { calculateNextDueDate } from '../../lib/recurringEngine';
-import { POPULAR_TAGS, CARD_THEMES, INDIAN_BANKS } from '../../lib/constants';
+import { POPULAR_TAGS, CARD_THEMES } from '../../lib/constants';
 import { CustomDatePicker } from '../common/CustomDatePicker';
 import { CustomTimePicker } from '../common/CustomTimePicker';
-import { CustomSelect, SelectOption } from '../common/CustomSelect';
+import { CustomSelect } from '../common/CustomSelect';
 import { PaymentAppManagementModal } from '../paymentApps/PaymentAppManagementModal';
 import { AddAccountOrCardModal } from '../accounts/AddAccountOrCardModal';
 import {
@@ -20,23 +18,16 @@ import {
   Check,
   Delete,
   Camera,
-  Calendar,
-  Tag,
-  FileText,
   ChevronDown,
   AlertTriangle,
   Sparkles,
   Plus,
-  Layers,
   Settings2,
   Split,
   Globe,
-  MessageSquareCode,
-  Coins,
   Trash2,
   Target,
   ArrowRight,
-  RefreshCw,
   Repeat,
   Zap,
   Star,
@@ -80,21 +71,21 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [selectedCardId, setSelectedCardId] = useState<string>('');
   const [selectedToAccountId, setSelectedToAccountId] = useState<string>('');
+  const [selectedToCardId, setSelectedToCardId] = useState<string>('');
   const [selectedPaymentAppId, setSelectedPaymentAppId] = useState<string>('');
-  const [debtPersonName, setDebtPersonName] = useState<string>('');
   const [selectedGoalId, setSelectedGoalId] = useState<string>('');
   const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
   const [showTemplateModal, setShowTemplateModal] = useState<boolean>(false);
   const [templateSavedNotice, setTemplateSavedNotice] = useState<string | null>(null);
   const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
 
-  // Cashew Feature: Multi-Currency
+  // Feature: Multi-Currency
   const [selectedCurrency, setSelectedCurrency] = useState<string>('INR');
   const [foreignAmount, setForeignAmount] = useState<string>('');
   const [customExchangeRate, setCustomExchangeRate] = useState<number>(1);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState<boolean>(false);
 
-  // Cashew Feature: Transaction Splits
+  // Feature: Transaction Splits
   const [isSplitMode, setIsSplitMode] = useState<boolean>(false);
   const [splits, setSplits] = useState<SplitItem[]>([]);
 
@@ -105,11 +96,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [recurringAutoRecord, setRecurringAutoRecord] = useState<boolean>(true);
   const [recurringHasEndDate, setRecurringHasEndDate] = useState<boolean>(false);
   const [recurringEndDate, setRecurringEndDate] = useState<string>('');
-
-  // Cashew Feature: SMS Parser Quick-Fill
-  const [showSmsDrawer, setShowSmsDrawer] = useState<boolean>(false);
-  const [smsRawText, setSmsRawText] = useState<string>('');
-  const [smsParseMessage, setSmsParseMessage] = useState<string | null>(null);
 
   // Progressive Disclosure
   const [showMoreDetails, setShowMoreDetails] = useState<boolean>(false);
@@ -145,9 +131,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setCustomExchangeRate(1);
       setIsSplitMode(false);
       setSplits([]);
-      setShowSmsDrawer(false);
-      setSmsRawText('');
-      setSmsParseMessage(null);
       setSelectedGoalId('');
       setIsRecurring(false);
       setRecurringFrequency('MONTHLY');
@@ -155,6 +138,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setRecurringAutoRecord(true);
       setRecurringHasEndDate(false);
       setRecurringEndDate('');
+      setSelectedToCardId('');
 
       // Default account or credit card based on initialAccountId if provided
       if (initialAccountId) {
@@ -247,51 +231,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     const num = parseFloat(val) || 0;
     const inINR = Math.round(num * customExchangeRate * 100) / 100;
     setCalcInput(inINR > 0 ? inINR.toString() : '0');
-  };
-
-  // SMS Parser Handler
-  const handleParseSMS = (text: string) => {
-    const result = parseBankSMS(text);
-    if (result) {
-      if (result.amount) setCalcInput(result.amount.toString());
-      if (result.type) setType(result.type);
-      if (result.merchant) setMerchantName(result.merchant);
-      if (result.suggestedCategoryId) setSelectedCategoryId(result.suggestedCategoryId);
-      if (result.date) setDate(result.date);
-
-      if (result.accountLast4) {
-        const matchCard = creditCards.find(c => c.lastFourDigits === result.accountLast4);
-        if (matchCard) {
-          setSelectedCardId(matchCard.id);
-          setSelectedAccountId('');
-        } else {
-          const matchAcc = accounts.find(
-            a => a.accountNumberLast4 === result.accountLast4 || (result.bankName && a.institution.toLowerCase().includes(result.bankName.toLowerCase()))
-          );
-          if (matchAcc) setSelectedAccountId(matchAcc.id);
-        }
-      } else if (result.bankName) {
-        const matchAcc = accounts.find(a => a.institution.toLowerCase().includes(result.bankName!.toLowerCase()));
-        if (matchAcc) setSelectedAccountId(matchAcc.id);
-      }
-
-      if (result.paymentApp) {
-        const matchApp = paymentApps.find(p => p.name.toLowerCase().includes(result.paymentApp!.toLowerCase()));
-        if (matchApp) setSelectedPaymentAppId(matchApp.id);
-      }
-
-      if (result.referenceNumber) {
-        setNotes(`Ref: ${result.referenceNumber}`);
-      }
-
-      setSmsParseMessage(`✓ Extracted ${result.type} of ₹${result.amount || 0} ${result.merchant ? 'at ' + result.merchant : ''}`);
-      setTimeout(() => {
-        setShowSmsDrawer(false);
-        setSmsParseMessage(null);
-      }, 1000);
-    } else {
-      setSmsParseMessage('Could not parse SMS format. Try pasting full bank alert.');
-    }
   };
 
   // Split management
@@ -439,6 +378,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     const acc = accounts.find(a => a.id === selectedAccountId);
     const card = creditCards.find(c => c.id === selectedCardId);
     const toAcc = accounts.find(a => a.id === selectedToAccountId);
+    const toCard = creditCards.find(c => c.id === selectedToCardId);
     const papp = paymentApps.find(p => p.id === selectedPaymentAppId);
     const cat = categories.find(c => c.id === selectedCategoryId);
 
@@ -478,15 +418,17 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         nextDueDate,
         lastGeneratedDate: isPastOrToday ? date : undefined,
         endDate: recurringHasEndDate && recurringEndDate ? recurringEndDate : undefined,
-        categoryId: isSplitMode && splits.length > 0 ? splits[0].categoryId : selectedCategoryId,
-        categoryName: isSplitMode && splits.length > 0 ? categories.find(c => c.id === splits[0].categoryId)?.name : cat?.name,
+        categoryId: (type === 'TRANSFER' || type === 'CARD_PAYMENT' || type.includes('REPAYMENT')) ? 'cat_transfer' : (isSplitMode && splits.length > 0 ? splits[0].categoryId : selectedCategoryId),
+        categoryName: type === 'CARD_PAYMENT' ? 'Credit Card Payment' : (type === 'TRANSFER' || type.includes('REPAYMENT') ? 'Transfer' : (isSplitMode && splits.length > 0 ? categories.find(c => c.id === splits[0].categoryId)?.name : cat?.name)),
         subcategory: selectedSubcategory || undefined,
         accountId: (type === 'EXPENSE' && selectedCardId && !selectedAccountId) ? undefined : selectedAccountId,
         accountName: acc?.name,
-        creditCardId: (type === 'CARD_PAYMENT' || (type === 'EXPENSE' && selectedCardId)) ? selectedCardId : undefined,
+        creditCardId: (type === 'CARD_PAYMENT' || (type === 'EXPENSE' && selectedCardId) || (type === 'TRANSFER' && selectedCardId)) ? selectedCardId : undefined,
         creditCardName: card?.name,
         toAccountId: selectedToAccountId || undefined,
         toAccountName: toAcc?.name,
+        toCreditCardId: selectedToCardId || undefined,
+        toCreditCardName: toCard?.name,
         paymentAppId: selectedPaymentAppId || undefined,
         paymentAppName: papp?.name,
         merchantName: merchantName.trim() || undefined,
@@ -502,19 +444,21 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       type,
       date,
       time,
-      categoryId: isSplitMode && splits.length > 0 ? splits[0].categoryId : selectedCategoryId,
-      categoryName: isSplitMode && splits.length > 0 ? categories.find(c => c.id === splits[0].categoryId)?.name : cat?.name,
+      categoryId: (type === 'TRANSFER' || type === 'CARD_PAYMENT' || type.includes('REPAYMENT')) ? 'cat_transfer' : (isSplitMode && splits.length > 0 ? splits[0].categoryId : selectedCategoryId),
+      categoryName: type === 'CARD_PAYMENT' ? 'Credit Card Payment' : (type === 'TRANSFER' || type.includes('REPAYMENT') ? 'Transfer' : (isSplitMode && splits.length > 0 ? categories.find(c => c.id === splits[0].categoryId)?.name : cat?.name)),
       subcategory: selectedSubcategory,
       merchantName: merchantName.trim() || undefined,
       accountId: (type === 'EXPENSE' && selectedCardId && !selectedAccountId) ? undefined : selectedAccountId,
       accountName: acc?.name,
-      creditCardId: (type === 'CARD_PAYMENT' || (type === 'EXPENSE' && selectedCardId)) ? selectedCardId : undefined,
+      creditCardId: (type === 'CARD_PAYMENT' || (type === 'EXPENSE' && selectedCardId) || (type === 'TRANSFER' && selectedCardId)) ? selectedCardId : undefined,
       creditCardName: card?.name,
       toAccountId: selectedToAccountId || undefined,
       toAccountName: toAcc?.name,
+      toCreditCardId: selectedToCardId || undefined,
+      toCreditCardName: toCard?.name,
       paymentAppId: selectedPaymentAppId || undefined,
       paymentAppName: papp?.name,
-      debtPersonName: debtPersonName.trim() || undefined,
+      debtPersonName: (type === 'MONEY_LENT' || type === 'MONEY_BORROWED' ? merchantName.trim() : undefined) || undefined,
       goalId: selectedGoalId || undefined,
       recurringId: recurringRuleId,
       recurringName: isRecurring ? (merchantName.trim() || cat?.name) : undefined,
@@ -535,7 +479,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-[200] bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6">
         {/* Header */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
@@ -579,11 +523,11 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/20">{(templates || []).length}</span>
           </button>
 
-          {(templates || []).slice(0, 6).map(tmpl => {
+          {(templates || []).slice(0, 6).map((tmpl, idx) => {
             const isSelected = appliedTemplateId === tmpl.id;
             return (
               <button
-                key={tmpl.id}
+                key={`tmpl_${tmpl.id}_${idx}`}
                 type="button"
                 onClick={() => handleApplyTemplate(tmpl)}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border whitespace-nowrap shrink-0 font-medium transition-all ${
@@ -621,7 +565,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
         {/* Amount Display & Quick Utilities */}
         <div className="px-6 py-3 bg-slate-50 dark:bg-slate-850 border-b border-slate-100 dark:border-slate-800 space-y-2">
-          {/* Quick Utility Chips (Cashew signatures: Currency, SMS Paste, Split, Save Template) */}
+          {/* Quick Utility Chips (Advanced signatures: Currency, SMS Paste, Split, Save Template) */}
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-1.5">
               {/* Currency Button */}
@@ -666,16 +610,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 <span className="hidden sm:inline">Save Template</span>
               </button>
             </div>
-
-            {/* SMS Parser Button */}
-            <button
-              type="button"
-              onClick={() => setShowSmsDrawer(!showSmsDrawer)}
-              className="px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300/80 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center space-x-1 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-all shadow-xs"
-            >
-              <Sparkles size={12} className="text-emerald-600 dark:text-emerald-400" />
-              <span>Paste Bank SMS</span>
-            </button>
           </div>
 
           {/* Currency Dropdown Selector */}
@@ -724,88 +658,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             </div>
           )}
 
-          {/* SMS Paste Quick Drawer */}
-          {showSmsDrawer && (
-            <div className="p-3 bg-emerald-50/90 dark:bg-emerald-950/60 rounded-2xl border border-emerald-200 dark:border-emerald-800 space-y-2 animate-in fade-in duration-100">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200 flex items-center space-x-1">
-                  <MessageSquareCode size={14} />
-                  <span>Paste Bank or UPI SMS / Alert</span>
-                </span>
-                <button
-                  onClick={() => setShowSmsDrawer(false)}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <textarea
-                value={smsRawText}
-                onChange={e => setSmsRawText(e.target.value)}
-                placeholder="e.g. Sent Rs.450.00 from HDFC Bank A/C XX4920 to STARBUCKS via UPI on 16-Aug Ref 429182301"
-                rows={2}
-                className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-700 text-xs text-slate-800 dark:text-slate-100 outline-none resize-none"
-              />
-
-              {/* Sample Bank SMS Chips for quick testing */}
-              <div className="space-y-1">
-                <span className="text-[10px] font-semibold text-slate-500 block">Or test with samples:</span>
-                <div className="flex flex-wrap gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const txt = 'Sent Rs. 650.00 from HDFC Bank A/C XX4920 to SWIGGY on 16-Aug Ref 994827';
-                      setSmsRawText(txt);
-                      handleParseSMS(txt);
-                    }}
-                    className="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-emerald-300 text-[10px] font-medium text-slate-700 dark:text-slate-200 hover:bg-emerald-100"
-                  >
-                    HDFC Swiggy (₹650)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const txt = 'INR 2,499.00 spent on ICICI Bank Credit Card XX1029 at BLINKIT GROCERIES on 16-Aug';
-                      setSmsRawText(txt);
-                      handleParseSMS(txt);
-                    }}
-                    className="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-emerald-300 text-[10px] font-medium text-slate-700 dark:text-slate-200 hover:bg-emerald-100"
-                  >
-                    ICICI Blinkit (₹2,499)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const txt = 'Dear SBI User, A/C 9812 Credited with Rs 75,000.00 by SALARY AUGUST on 16-Aug';
-                      setSmsRawText(txt);
-                      handleParseSMS(txt);
-                    }}
-                    className="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-emerald-300 text-[10px] font-medium text-slate-700 dark:text-slate-200 hover:bg-emerald-100"
-                  >
-                    SBI Salary (₹75k)
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                {smsParseMessage ? (
-                  <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-                    {smsParseMessage}
-                  </span>
-                ) : <span />}
-                <button
-                  type="button"
-                  onClick={() => handleParseSMS(smsRawText)}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition-all flex items-center space-x-1"
-                >
-                  <span>Auto-Fill Form</span>
-                  <ArrowRight size={12} />
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Amount In INR Display */}
           <div className="flex items-center justify-between pt-1">
             <div>
@@ -850,7 +702,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             />
           </div>
 
-          {/* Cashew Feature: Split Transactions UI */}
+          {/* Feature: Split Transactions UI */}
           {isSplitMode && (
             <div className="p-4 rounded-3xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/70 space-y-3">
               <div className="flex items-center justify-between">
@@ -883,25 +735,20 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
               {/* Split Rows */}
               <div className="space-y-2">
-                {splits.map((split, index) => {
-                  const splitCat = categories.find(c => c.id === split.categoryId);
+                {splits.map((split, idx) => {
                   return (
                     <div
-                      key={split.id}
+                      key={`split_${split.id || 'split'}_${idx}`}
                       className="p-3 rounded-2xl bg-white dark:bg-slate-800 border border-purple-200/60 dark:border-slate-700 space-y-2 shadow-xs"
                     >
                       <div className="flex items-center space-x-2">
-                        <select
-                          value={split.categoryId}
-                          onChange={e => handleUpdateSplit(split.id, { categoryId: e.target.value })}
-                          className="flex-1 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-750 border border-slate-200 dark:border-slate-700 text-xs font-semibold outline-none"
-                        >
-                          {categories.map(c => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="flex-1">
+                          <CustomSelect
+                            value={split.categoryId}
+                            onChange={(val) => handleUpdateSplit(split.id, { categoryId: val })}
+                            options={categories.map(c => ({ value: c.id, label: c.name }))}
+                          />
+                        </div>
 
                         <div className="relative w-28">
                           <span className="absolute left-2.5 top-1.5 text-xs text-slate-400 font-bold">₹</span>
@@ -1027,9 +874,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               {/* Subcategories */}
               {selectedCategoryObj && selectedCategoryObj.subcategories.length > 0 && (
                 <div className="flex space-x-1.5 overflow-x-auto no-scrollbar pt-2">
-                  {selectedCategoryObj.subcategories.map(sub => (
+                  {selectedCategoryObj.subcategories.map((sub, idx) => (
                     <button
-                      key={sub}
+                      key={`sub_${sub}_${idx}`}
                       type="button"
                       onClick={() => setSelectedSubcategory(sub === selectedSubcategory ? '' : sub)}
                       className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors ${
@@ -1090,15 +937,15 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                     />
                     <div className="text-left">
                       <span className="block leading-tight">{acc.name}</span>
-                      <span className="text-[10px] text-slate-400 font-normal">
-                        {acc.institution}
+                      <span className={`text-[10px] font-semibold ${isSelected ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500'}`}>
+                        Bal: {formatINR(acc.calculatedBalance)}
                       </span>
                     </div>
                   </button>
                 );
               })}
 
-              {type === 'EXPENSE' &&
+              {(type === 'EXPENSE' || type === 'TRANSFER') &&
                 activeCreditCards.map(card => {
                   const isSelected = selectedCardId === card.id && !selectedAccountId;
                   const theme = CARD_THEMES.find(t => t.id === card.cardTheme) || CARD_THEMES[0];
@@ -1126,7 +973,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                       <div className="text-left">
                         <span className="block leading-tight">{card.name}</span>
                         <span className={`text-[10px] font-mono ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
-                          ••{card.lastFourDigits} • {card.network}
+                          Due: {formatINR(card.currentOutstanding)} • Avail: {formatINR(Math.max(0, card.creditLimit - card.currentOutstanding))}
                         </span>
                       </div>
                     </button>
@@ -1152,14 +999,17 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           {type === 'TRANSFER' && (
             <div>
               <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5 block">
-                To Destination Account
+                To Destination Account / Credit Card
               </label>
               <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1">
                 {activeAccounts.filter(a => a.id !== selectedAccountId).map(acc => (
                   <button
                     key={acc.id}
                     type="button"
-                    onClick={() => setSelectedToAccountId(acc.id)}
+                    onClick={() => {
+                      setSelectedToAccountId(acc.id);
+                      setSelectedToCardId('');
+                    }}
                     className={`px-3 py-2 rounded-2xl border text-xs font-medium whitespace-nowrap flex items-center space-x-2.5 transition-all shrink-0 ${
                       selectedToAccountId === acc.id
                         ? 'border-emerald-500 bg-emerald-50/80 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 font-bold shadow-md ring-2 ring-emerald-500/30'
@@ -1175,12 +1025,46 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                     />
                     <div className="text-left">
                       <span className="block leading-tight">{acc.name}</span>
-                      <span className="text-[10px] text-slate-400 font-normal">
-                        {acc.institution}
+                      <span className={`text-[10px] font-semibold ${selectedToAccountId === acc.id ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500'}`}>
+                        Bal: {formatINR(acc.calculatedBalance)}
                       </span>
                     </div>
                   </button>
                 ))}
+
+                {activeCreditCards.filter(c => c.id !== selectedCardId).map(card => {
+                  const isSelected = selectedToCardId === card.id;
+                  const theme = CARD_THEMES.find(t => t.id === card.cardTheme) || CARD_THEMES[0];
+                  return (
+                    <button
+                      key={card.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedToCardId(card.id);
+                        setSelectedToAccountId('');
+                      }}
+                      className={`px-3 py-2 rounded-2xl border text-xs font-medium whitespace-nowrap flex items-center space-x-2.5 transition-all shrink-0 ${
+                        isSelected
+                          ? `border-purple-500 bg-gradient-to-r ${theme.gradient} text-white font-bold shadow-lg ring-2 ring-purple-500/40`
+                          : 'border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                      }`}
+                    >
+                      <Bank3DIcon
+                        institution={card.issuer}
+                        type="CREDIT_CARD"
+                        color={card.color || '#9333ea'}
+                        size="sm"
+                        glow={isSelected}
+                      />
+                      <div className="text-left">
+                        <span className="block leading-tight">{card.name}</span>
+                        <span className={`text-[10px] font-mono ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                          Due: {formatINR(card.currentOutstanding || (card as any).calculatedOutstanding)} • Avail: {formatINR(Math.max(0, card.creditLimit - (card.currentOutstanding || (card as any).calculatedOutstanding)))}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1212,7 +1096,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                     <div className="text-left">
                       <span className="block leading-tight">{card.name}</span>
                       <span className="text-[10px] text-purple-600 dark:text-purple-300 font-semibold">
-                        Due: {formatINR(card.currentOutstanding)}
+                        Due: {formatINR(card.currentOutstanding)} • Avail: {formatINR(Math.max(0, card.creditLimit - card.currentOutstanding))}
                       </span>
                     </div>
                   </button>
@@ -1448,18 +1332,17 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                       <Target size={12} className="text-emerald-600 dark:text-emerald-400" />
                       <span>Link to Savings Goal</span>
                     </label>
-                    <select
+                    <CustomSelect
                       value={selectedGoalId}
-                      onChange={e => setSelectedGoalId(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium"
-                    >
-                      <option value="">No goal linked</option>
-                      {goals.map(g => (
-                        <option key={g.id} value={g.id}>
-                          {g.name} ({formatINR(g.currentAmount)} / {formatINR(g.targetAmount)})
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setSelectedGoalId}
+                      options={[
+                        { value: '', label: 'No goal linked' },
+                        ...goals.map(g => ({
+                          value: g.id,
+                          label: `${g.name} (${formatINR(g.currentAmount)} / ${formatINR(g.targetAmount)})`
+                        }))
+                      ]}
+                    />
                   </div>
                 )}
 
@@ -1467,11 +1350,11 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 <div>
                   <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tags</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {POPULAR_TAGS.map(tag => {
+                    {POPULAR_TAGS.map((tag, idx) => {
                       const hasTag = tags.includes(tag);
                       return (
                         <button
-                          key={tag}
+                          key={`tag_${tag}_${idx}`}
                           type="button"
                           onClick={() => {
                             setTags(prev =>

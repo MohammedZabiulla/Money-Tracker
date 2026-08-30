@@ -16,10 +16,11 @@ import {
   AppSettings,
   AppBackupData,
   Goal,
-  CashewExportOptions,
+  ExportOptions,
 } from '../types';
 import { DEFAULT_CATEGORIES, DEFAULT_PAYMENT_APPS, DEFAULT_APP_SETTINGS, DEFAULT_TEMPLATES } from './constants';
 import { getDemoData } from './demoData';
+import { exportAppDataToExcel, DEFAULT_EXPORT_OPTIONS } from './appDataHub';
 import * as XLSX from 'xlsx';
 
 const STORAGE_KEYS = {
@@ -128,10 +129,13 @@ export function loadInitialState(): LocalStorageState {
     const paymentApps = parseJson<PaymentApp[]>(localStorage.getItem(STORAGE_KEYS.PAYMENT_APPS), DEFAULT_PAYMENT_APPS);
     const transactions = parseJson<Transaction[]>(localStorage.getItem(STORAGE_KEYS.TRANSACTIONS), []);
     const templates = parseJson<TransactionTemplate[]>(localStorage.getItem(STORAGE_KEYS.TEMPLATES), DEFAULT_TEMPLATES);
-    const recurring = parseJson<RecurringTransaction[]>(localStorage.getItem(STORAGE_KEYS.RECURRING), []);
-    const subscriptions = parseJson<Subscription[]>(localStorage.getItem(STORAGE_KEYS.SUBSCRIPTIONS), []);
+    const demo = getDemoData();
+    const rawRecurring = localStorage.getItem(STORAGE_KEYS.RECURRING) !== null ? parseJson<RecurringTransaction[]>(localStorage.getItem(STORAGE_KEYS.RECURRING), []) : demo.recurring;
+    const recurring = rawRecurring;
+    const rawSubscriptions = localStorage.getItem(STORAGE_KEYS.SUBSCRIPTIONS) !== null ? parseJson<Subscription[]>(localStorage.getItem(STORAGE_KEYS.SUBSCRIPTIONS), []) : demo.subscriptions;
+    const subscriptions = rawSubscriptions;
     const budgets = parseJson<Budget[]>(localStorage.getItem(STORAGE_KEYS.BUDGETS), []);
-    const goals = parseJson<Goal[]>(localStorage.getItem(STORAGE_KEYS.GOALS), getDemoData().goals || []);
+    const goals = localStorage.getItem(STORAGE_KEYS.GOALS) !== null ? parseJson<Goal[]>(localStorage.getItem(STORAGE_KEYS.GOALS), []) : (getDemoData().goals || []);
     const loans = parseJson<Loan[]>(localStorage.getItem(STORAGE_KEYS.LOANS), []);
     const investments = parseJson<Investment[]>(localStorage.getItem(STORAGE_KEYS.INVESTMENTS), []);
     const debts = parseJson<DebtRecord[]>(localStorage.getItem(STORAGE_KEYS.DEBTS), []);
@@ -276,11 +280,11 @@ export function restoreJsonBackup(jsonString: string): LocalStorageState | null 
 }
 
 /**
- * Filter transactions based on CashewExportOptions
+ * Filter transactions based on ExportOptions
  */
 export function filterTransactionsForExport(
   transactions: Transaction[],
-  options: CashewExportOptions
+  options: ExportOptions
 ): Transaction[] {
   const now = new Date();
   const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -334,14 +338,14 @@ export function filterTransactionsForExport(
 }
 
 /**
- * Export transactions in standard Cashew-compatible CSV format
+ * Export transactions in standard standard CSV format
  */
-export function exportCashewTransactionsCsv(
+export function exportTransactionsCsv(
   transactions: Transaction[],
-  options?: Partial<CashewExportOptions>
+  options?: Partial<ExportOptions>
 ): void {
-  const opts: CashewExportOptions = {
-    format: 'cashew_csv',
+  const opts: ExportOptions = {
+    format: 'standard_csv',
     dateRange: 'ALL',
     includeNotes: true,
     includeTags: true,
@@ -352,7 +356,7 @@ export function exportCashewTransactionsCsv(
 
   const filtered = filterTransactionsForExport(transactions, opts);
 
-  // Cashew Standard CSV Headers
+  // Standard CSV Headers
   const headers = [
     'Date',
     'Time',
@@ -405,7 +409,7 @@ export function exportCashewTransactionsCsv(
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Cashew_Transactions_${new Date().toISOString().substring(0, 10)}.csv`;
+  a.download = `Transactions_${new Date().toISOString().substring(0, 10)}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -487,97 +491,10 @@ export function exportTemplatesJson(templates: TransactionTemplate[]): void {
  * Export transactions and summary to Excel or CSV workbook
  */
 export function exportToExcel(state: LocalStorageState, format: 'xlsx' | 'csv' = 'xlsx'): void {
-  const wb = XLSX.utils.book_new();
-
-  // Transactions Sheet
-  const txRows = state.transactions
-    .filter(t => !t.isDeleted)
-    .map(t => ({
-      ID: t.id,
-      Date: t.date,
-      Time: t.time,
-      Type: t.type,
-      Category: t.categoryName || '',
-      Subcategory: t.subcategory || '',
-      Amount: t.amount,
-      RefundAmount: t.refundAmount || 0,
-      Merchant: t.merchantName || '',
-      Account: t.accountName || '',
-      CreditCard: t.creditCardName || '',
-      PaymentApp: t.paymentAppName || '',
-      ToAccount: t.toAccountName || '',
-      Notes: t.notes || '',
-      Tags: (t.tags || []).join(', '),
-    }));
-  const wsTx = XLSX.utils.json_to_sheet(txRows);
-  XLSX.utils.book_append_sheet(wb, wsTx, 'Transactions');
-
-  // Templates Sheet
-  if (state.templates && state.templates.length > 0) {
-    const tmplRows = state.templates.map(tmpl => ({
-      Name: tmpl.name,
-      Type: tmpl.type,
-      Amount: tmpl.amount || '',
-      Category: tmpl.categoryName || '',
-      Subcategory: tmpl.subcategory || '',
-      Merchant: tmpl.merchantName || '',
-      Account: tmpl.accountName || '',
-      CreditCard: tmpl.creditCardName || '',
-      PaymentApp: tmpl.paymentAppName || '',
-      Notes: tmpl.notes || '',
-      Tags: (tmpl.tags || []).join(', '),
-      UsageCount: tmpl.usageCount || 0,
-      IsFavorite: tmpl.isFavorite ? 'Yes' : 'No',
-    }));
-    const wsTmpl = XLSX.utils.json_to_sheet(tmplRows);
-    XLSX.utils.book_append_sheet(wb, wsTmpl, 'Templates');
-  }
-
-  // Accounts Sheet
-  const accRows = state.accounts.map(a => ({
-    ID: a.id,
-    Name: a.name,
-    Institution: a.institution,
-    Type: a.type,
-    OpeningBalance: a.openingBalance,
-    CalculatedBalance: a.calculatedBalance,
-    Active: a.isActive ? 'Yes' : 'No',
-  }));
-  const wsAcc = XLSX.utils.json_to_sheet(accRows);
-  XLSX.utils.book_append_sheet(wb, wsAcc, 'Accounts');
-
-  // Cards Sheet
-  if (state.creditCards.length > 0) {
-    const cardRows = state.creditCards.map(c => ({
-      ID: c.id,
-      Name: c.name,
-      Issuer: c.issuer,
-      Last4: c.lastFourDigits,
-      Limit: c.creditLimit,
-      Outstanding: c.currentOutstanding,
-      StatementDay: c.statementDate,
-      DueDay: c.dueDate,
-    }));
-    const wsCards = XLSX.utils.json_to_sheet(cardRows);
-    XLSX.utils.book_append_sheet(wb, wsCards, 'CreditCards');
-  }
-
-  // Investments Sheet
-  if (state.investments.length > 0) {
-    const invRows = state.investments.map(i => ({
-      Name: i.name,
-      Category: i.category,
-      InvestedAmount: i.investedAmount,
-      CurrentValue: i.currentValue,
-      GainLoss: i.currentValue - i.investedAmount,
-      PurchaseDate: i.purchaseDate,
-    }));
-    const wsInv = XLSX.utils.json_to_sheet(invRows);
-    XLSX.utils.book_append_sheet(wb, wsInv, 'Investments');
-  }
-
-  const filename = `MoneyTracker_Export_${new Date().toISOString().substring(0, 10)}.${format}`;
-  XLSX.writeFile(wb, filename);
+  exportAppDataToExcel(state, {
+    ...DEFAULT_EXPORT_OPTIONS,
+    format,
+  });
 }
 
 /**
@@ -619,7 +536,7 @@ export function exportActivityLogsCsv(logs: import('../types').ActivityLog[]): v
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Cashew_Activity_Audit_Log_${new Date().toISOString().substring(0, 10)}.csv`;
+  a.download = `Activity_Audit_Log_${new Date().toISOString().substring(0, 10)}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -632,7 +549,7 @@ export function exportActivityLogsCsv(logs: import('../types').ActivityLog[]): v
 export function exportActivityLogsJson(logs: import('../types').ActivityLog[]): void {
   const data = {
     version: 1,
-    type: 'cashew_activity_audit_logs',
+    type: 'activity_audit_logs',
     totalEntries: logs.length,
     exportedAt: new Date().toISOString(),
     logs,
@@ -641,7 +558,7 @@ export function exportActivityLogsJson(logs: import('../types').ActivityLog[]): 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Cashew_Activity_Audit_Log_${new Date().toISOString().substring(0, 10)}.json`;
+  a.download = `Activity_Audit_Log_${new Date().toISOString().substring(0, 10)}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

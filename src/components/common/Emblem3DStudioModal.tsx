@@ -202,7 +202,7 @@ export const Emblem3DStudioModal: React.FC<Emblem3DStudioModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-3xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/50 dark:bg-slate-850/50">
@@ -304,9 +304,9 @@ export const Emblem3DStudioModal: React.FC<Emblem3DStudioModalProps> = ({
                   'Power & Health',
                   'Home & Living',
                   'Entertainment & Art',
-                ].map(cat => (
+                ].map((cat, idx) => (
                   <button
-                    key={cat}
+                    key={`${cat}_${idx}`}
                     onClick={() => setGalleryCategory(cat)}
                     className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all ${
                       galleryCategory === cat
@@ -322,9 +322,9 @@ export const Emblem3DStudioModal: React.FC<Emblem3DStudioModalProps> = ({
 
             {/* Grid of Named 3D Emblems */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {filteredPresets.map(preset => (
+              {filteredPresets.map((preset, idx) => (
                 <div
-                  key={preset.id}
+                  key={`preset_${preset.id}_${idx}`}
                   onClick={() => {
                     if (onSelectEmblem) {
                       onSelectEmblem({
@@ -690,17 +690,17 @@ export const Emblem3DStudioModal: React.FC<Emblem3DStudioModalProps> = ({
                   Select Icon Symbol
                 </label>
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {CURATED_ICON_LIBRARY.map(cat => (
-                    <div key={cat.category}>
+                  {CURATED_ICON_LIBRARY.map((cat, cIdx) => (
+                    <div key={`${cat.category}_${cIdx}`}>
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                         {cat.category}
                       </span>
                       <div className="grid grid-cols-7 sm:grid-cols-9 gap-1.5">
-                        {cat.icons.map(ic => {
+                        {cat.icons.map((ic, idx) => {
                           const IconComponent = (LucideIcons as any)[ic] || LucideIcons.Sparkles;
                           return (
                             <button
-                              key={ic}
+                              key={`${ic}_${idx}`}
                               type="button"
                               onClick={() => setSelectedIcon(ic)}
                               className={`p-2 rounded-xl flex items-center justify-center border transition-all ${

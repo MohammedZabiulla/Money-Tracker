@@ -47,6 +47,21 @@ export type CardNetwork = 'VISA' | 'MASTERCARD' | 'RUPAY' | 'AMEX' | 'DINERS' | 
 
 export type CardTheme =
   | 'midnight'
+  | 'infinia_obsidian'
+  | 'centurion_black'
+  | 'magnus_burgundy'
+  | 'amazon_pay_icici'
+  | 'flipkart_axis'
+  | 'airtel_axis'
+  | 'swiggy_hdfc'
+  | 'sbi_simplyclick'
+  | 'sbi_cobalt'
+  | 'sc_ultimate_green'
+  | 'hsbc_crimson'
+  | 'icici_sapphiro_silver'
+  | 'tata_neu_violet'
+  | 'scapia_cyan'
+  | 'onecard_titanium'
   | 'carbon'
   | 'gold'
   | 'sapphire'
@@ -63,7 +78,8 @@ export type CardTheme =
   | 'dark_bronze'
   | 'velvet_wine'
   | 'arctic_silver'
-  | 'stealth_matte';
+  | 'stealth_matte'
+  | string;
 
 export interface BankCardCatalogItem {
   id?: string;
@@ -98,6 +114,7 @@ export interface Account {
   notes?: string;
   isActive: boolean;
   isExcludedFromNetWorth?: boolean;
+  order?: number;
   isDeleted?: boolean;
   deletedAt?: number;
   createdAt: number;
@@ -124,6 +141,7 @@ export interface CreditCard {
   cardImage?: string;
   notes?: string;
   isActive: boolean;
+  order?: number;
   isDeleted?: boolean;
   deletedAt?: number;
   createdAt: number;
@@ -159,6 +177,7 @@ export interface ConvertCardToAccountOptions {
   accountTheme?: string;
   notes?: string;
   migrateTransactions?: boolean;
+  deleteOriginalCard?: boolean;
 }
 
 export interface Category {
@@ -192,6 +211,7 @@ export interface PaymentApp {
   gradient?: string; // Custom 3D gradient string
   theme?: string;
   description?: string;
+  order?: number;
   isCustom?: boolean;
 }
 
@@ -221,7 +241,7 @@ export interface Transaction {
   tags?: string[];
   receiptUrl?: string; // base64 or local blob URL
   
-  // Multi-Currency & Split support (Cashew signature features)
+  // Multi-Currency & Split support (Advanced features)
   splits?: SplitItem[];
   originalCurrency?: string; // e.g. "USD", "EUR", "AED"
   originalAmount?: number;
@@ -234,6 +254,8 @@ export interface Transaction {
   toAccountName?: string;
   creditCardId?: string; // For credit card purchases/payments
   creditCardName?: string;
+  toCreditCardId?: string; // Destination credit card for transfers
+  toCreditCardName?: string;
   paymentAppId?: string; // "Google Pay", "PhonePe", etc. (metadata channel)
   paymentAppName?: string;
   
@@ -281,6 +303,8 @@ export interface RecurringTransaction {
   creditCardName?: string;
   toAccountId?: string;
   toAccountName?: string;
+  toCreditCardId?: string;
+  toCreditCardName?: string;
   paymentAppId?: string;
   paymentAppName?: string;
   merchantName?: string;
@@ -372,6 +396,7 @@ export interface Budget {
   rolloverAmount?: number;
   alertThresholdPercent?: number; // e.g. 80%
   color: string;
+  order?: number;
   isDeleted?: boolean;
   deletedAt?: number;
 }
@@ -390,7 +415,10 @@ export interface Loan {
   nextPaymentDate: string;
   linkedAccountId?: string;
   notes?: string;
+  order?: number;
   createdAt: number;
+  isDeleted?: boolean;
+  deletedAt?: number;
 }
 
 export interface Investment {
@@ -407,7 +435,10 @@ export interface Investment {
   folioNumber?: string;
   units?: number;
   navOrBuyPrice?: number;
+  order?: number;
   updatedAt: number;
+  isDeleted?: boolean;
+  deletedAt?: number;
 }
 
 export interface DebtRecord {
@@ -422,7 +453,10 @@ export interface DebtRecord {
   icon?: string;
   color?: string;
   contactNumber?: string;
+  order?: number;
   createdAt: number;
+  isDeleted?: boolean;
+  deletedAt?: number;
 }
 
 export interface AccountReconciliation {
@@ -439,6 +473,9 @@ export interface AccountReconciliation {
   createdAt: number;
 }
 
+export type AccountSortOption = 'CUSTOM' | 'NAME_ASC' | 'NAME_DESC' | 'BALANCE_DESC' | 'BALANCE_ASC' | 'TYPE' | 'RECENT' | 'INSTITUTION' | 'DATE_NEWEST' | 'DATE_OLDEST';
+export type CardSortOption = 'CUSTOM' | 'NAME_ASC' | 'NAME_DESC' | 'LIMIT_DESC' | 'LIMIT_ASC' | 'OUTSTANDING_DESC' | 'OUTSTANDING_ASC' | 'DUE_DATE' | 'DUE_DATE_ASC' | 'RECENT' | 'ISSUER_ASC' | 'UTILIZATION_DESC';
+
 export interface AppSettings {
   currencyCode: 'INR';
   currencySymbol: '₹';
@@ -452,6 +489,8 @@ export interface AppSettings {
   userName?: string;
   hiddenDashboardCards: string[];
   dashboardCardOrder: string[];
+  accountSortPreference?: AccountSortOption;
+  cardSortPreference?: CardSortOption;
   lowBalanceThreshold: number; // e.g. 5000
   notificationPreferences: {
     billReminders: boolean;
@@ -486,6 +525,7 @@ export interface Goal {
   status: 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   notes?: string;
   allocations: GoalAllocation[];
+  order?: number;
   createdAt: number;
   updatedAt: number;
   isDeleted?: boolean;
@@ -509,6 +549,8 @@ export interface TransactionTemplate {
   creditCardName?: string;
   toAccountId?: string;
   toAccountName?: string;
+  toCreditCardId?: string;
+  toCreditCardName?: string;
   paymentAppId?: string;
   paymentAppName?: string;
   notes?: string;
@@ -605,8 +647,8 @@ export interface AppBackupData {
   activityLogs?: ActivityLog[];
 }
 
-export interface CashewExportOptions {
-  format: 'cashew_csv' | 'xlsx' | 'json' | 'html_pdf' | 'templates_csv';
+export interface ExportOptions {
+  format: 'standard_csv' | 'xlsx' | 'json' | 'html_pdf' | 'templates_csv';
   dateRange: 'ALL' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'CUSTOM';
   startDate?: string;
   endDate?: string;

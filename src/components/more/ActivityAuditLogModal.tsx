@@ -1,32 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
-import { ActivityLog, ActivityDomain, ActivityActionType } from '../../types';
+import { ActivityDomain, ActivityActionType } from '../../types';
 import { formatActivityTimestamp } from '../../lib/activityLogger';
 import { Emblem3D } from '../common/IconHelper';
+import { CustomSelect } from '../common/CustomSelect';
 import {
   History,
   Search,
-  Filter,
-  Download,
   Trash2,
   X,
   ChevronDown,
   ChevronRight,
-  ArrowRight,
-  ShieldCheck,
-  Calendar,
-  Sliders,
-  CreditCard,
-  Landmark,
-  Layers,
-  Sparkles,
-  Zap,
-  RotateCcw,
-  CheckCircle2,
   FileSpreadsheet,
   FileCode,
-  AlertCircle,
-  Tag,
 } from 'lucide-react';
 
 interface ActivityAuditLogModalProps {
@@ -145,7 +131,7 @@ export const ActivityAuditLogModal: React.FC<ActivityAuditLogModalProps> = ({ is
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 w-full max-w-4xl max-h-[92vh] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
         {/* Modal Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/70 dark:bg-slate-900/70">
@@ -240,46 +226,50 @@ export const ActivityAuditLogModal: React.FC<ActivityAuditLogModalProps> = ({ is
             </div>
 
             {/* Domain filter */}
-            <select
-              value={selectedDomain}
-              onChange={e => setSelectedDomain(e.target.value)}
-              className="py-2 px-3 bg-white dark:bg-slate-800 rounded-xl text-xs border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="ALL">All Categories / Domains</option>
-              <option value="TRANSACTION">Transactions</option>
-              <option value="SETTINGS">Settings & Security</option>
-              <option value="ACCOUNT">Bank Accounts</option>
-              <option value="CREDIT_CARD">Credit Cards</option>
-              <option value="BUDGET">Budgets</option>
-              <option value="SUBSCRIPTION">Subscriptions</option>
-              <option value="RECURRING">Recurring Bills</option>
-              <option value="GOAL">Savings Goals</option>
-              <option value="LOAN">Loans & EMI</option>
-              <option value="INVESTMENT">Investments</option>
-              <option value="DEBT">Lent & Borrowed</option>
-              <option value="RECONCILIATION">Reconciliations</option>
-              <option value="TEMPLATE">Templates</option>
-              <option value="SYSTEM">System & Reset</option>
-            </select>
+            <div className="w-[180px]">
+              <CustomSelect
+                value={selectedDomain}
+                onChange={setSelectedDomain}
+                options={[
+                  { value: 'ALL', label: 'All Categories / Domains' },
+                  { value: 'TRANSACTION', label: 'Transactions' },
+                  { value: 'SETTINGS', label: 'Settings & Security' },
+                  { value: 'ACCOUNT', label: 'Bank Accounts' },
+                  { value: 'CREDIT_CARD', label: 'Credit Cards' },
+                  { value: 'BUDGET', label: 'Budgets' },
+                  { value: 'SUBSCRIPTION', label: 'Subscriptions' },
+                  { value: 'RECURRING', label: 'Recurring Bills' },
+                  { value: 'GOAL', label: 'Savings Goals' },
+                  { value: 'LOAN', label: 'Loans & EMI' },
+                  { value: 'INVESTMENT', label: 'Investments' },
+                  { value: 'DEBT', label: 'Lent & Borrowed' },
+                  { value: 'RECONCILIATION', label: 'Reconciliations' },
+                  { value: 'TEMPLATE', label: 'Templates' },
+                  { value: 'SYSTEM', label: 'System & Reset' },
+                ]}
+              />
+            </div>
 
             {/* Action filter */}
-            <select
-              value={selectedAction}
-              onChange={e => setSelectedAction(e.target.value)}
-              className="py-2 px-3 bg-white dark:bg-slate-800 rounded-xl text-xs border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="ALL">All Actions</option>
-              <option value="CREATE">Created (New)</option>
-              <option value="UPDATE">Modified / Edited</option>
-              <option value="DELETE">Moved to Trash</option>
-              <option value="RESTORE">Restored</option>
-              <option value="PURGE">Permanently Deleted</option>
-              <option value="CONVERT">Converted Type</option>
-              <option value="ALLOCATE">Allocated Funds</option>
-              <option value="SETTLE">Settled Dues</option>
-              <option value="RECONCILE">Reconciled</option>
-              <option value="RESET">Reset / Ledger Purge</option>
-            </select>
+            <div className="w-[180px]">
+              <CustomSelect
+                value={selectedAction}
+                onChange={setSelectedAction}
+                options={[
+                  { value: 'ALL', label: 'All Actions' },
+                  { value: 'CREATE', label: 'Created (New)' },
+                  { value: 'UPDATE', label: 'Modified / Edited' },
+                  { value: 'DELETE', label: 'Moved to Trash' },
+                  { value: 'RESTORE', label: 'Restored' },
+                  { value: 'PURGE', label: 'Permanently Deleted' },
+                  { value: 'CONVERT', label: 'Converted Type' },
+                  { value: 'ALLOCATE', label: 'Allocated Funds' },
+                  { value: 'SETTLE', label: 'Settled Dues' },
+                  { value: 'RECONCILE', label: 'Reconciled' },
+                  { value: 'RESET', label: 'Reset / Ledger Purge' },
+                ]}
+              />
+            </div>
           </div>
 
           <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
@@ -320,7 +310,7 @@ export const ActivityAuditLogModal: React.FC<ActivityAuditLogModalProps> = ({ is
               </p>
             </div>
           ) : (
-            filteredLogs.map(log => {
+            filteredLogs.map((log, idx) => {
               const domainMeta = DOMAIN_CONFIG[log.domain] || DOMAIN_CONFIG.SYSTEM;
               const actionMeta = ACTION_BADGES[log.action] || {
                 label: log.action,
@@ -332,7 +322,7 @@ export const ActivityAuditLogModal: React.FC<ActivityAuditLogModalProps> = ({ is
 
               return (
                 <div
-                  key={log.id}
+                  key={`log_${log.id}_${idx}`}
                   className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all"
                 >
                   {/* Item Header */}
@@ -406,7 +396,7 @@ export const ActivityAuditLogModal: React.FC<ActivityAuditLogModalProps> = ({ is
                         </div>
                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
                           {log.details.map((diff, dIdx) => (
-                            <div key={dIdx} className="grid grid-cols-12 px-3 py-2 items-center gap-2 text-[11px] sm:text-xs">
+                            <div key={`${diff.field || 'diff'}-${dIdx}`} className="grid grid-cols-12 px-3 py-2 items-center gap-2 text-[11px] sm:text-xs">
                               <div className="col-span-4 font-semibold text-slate-800 dark:text-slate-200 truncate">
                                 {diff.label}
                               </div>

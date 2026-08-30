@@ -30,6 +30,7 @@ interface BankVisualProps {
   onConvert?: () => void;
   onViewTransactions?: () => void;
   showActions?: boolean;
+  isStackedPeekOnly?: boolean;
 }
 
 export const BankVisual: React.FC<BankVisualProps> = ({
@@ -40,6 +41,7 @@ export const BankVisual: React.FC<BankVisualProps> = ({
   onConvert,
   onViewTransactions,
   showActions = true,
+  isStackedPeekOnly = false,
 }) => {
   const bankConfig = INDIAN_BANKS.find(
     b =>
@@ -117,6 +119,48 @@ export const BankVisual: React.FC<BankVisualProps> = ({
   };
 
   const typeInfo = getTypeBadge(account.type);
+
+  // --------------------------------------------------------------------------
+  // PEEK-ONLY STACKED VIEW
+  // --------------------------------------------------------------------------
+  if (isStackedPeekOnly) {
+    return (
+      <div
+        onClick={onViewTransactions}
+        className="relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm p-3 flex items-center justify-between cursor-pointer hover:border-emerald-500/40"
+      >
+        <div className="flex items-center space-x-3">
+          <div
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-xs"
+            style={{ backgroundColor: brandColor }}
+          >
+            {isCash ? <Banknote size={16} /> : isWallet ? <Wallet size={16} /> : <Building2 size={16} />}
+          </div>
+          <div>
+            <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white leading-tight truncate max-w-[170px] sm:max-w-[240px]">
+              {account.name}
+            </h4>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center space-x-1.5">
+              <span>{account.institution}</span>
+              {account.accountNumberLast4 && (
+                <>
+                  <span>•</span>
+                  <span className="font-mono font-semibold text-slate-600 dark:text-slate-300">•••• {account.accountNumberLast4}</span>
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="text-right">
+          <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block">Balance</span>
+          <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white">
+            {formatINR(account.calculatedBalance)}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   // --------------------------------------------------------------------------
   // DIGITAL WALLET & CASH VIEW

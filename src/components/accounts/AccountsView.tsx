@@ -20,8 +20,14 @@ import {
 } from '../../lib/constants';
 import { CardVisual, CardChipBadge, NetworkLogo, EMVChip } from '../common/CardVisual';
 import { BankVisual } from '../common/BankVisual';
+import { StackedCardsDeck, StackedBanksDeck, StackedWalletsDeck } from './StackedAssetDecks';
 import { ConvertBankModal } from './ConvertBankModal';
+import { ConvertCreditCardModal } from './ConvertCreditCardModal';
 import { AccountTransactionsModal } from './AccountTransactionsModal';
+import { ArrangeAccountsModal } from './ArrangeAccountsModal';
+import { ArrangeCardsModal } from './ArrangeCardsModal';
+import { AccountSortSelector, CardSortSelector } from './SortOptionSelector';
+import { AccountSortOption, CardSortOption } from '../../types';
 import { IconHelper, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import {
@@ -47,8 +53,10 @@ import {
   Compass,
   Tag,
   Layers,
+  LayoutGrid,
   ChevronRight,
   Filter,
+  ArrowUpDown,
 } from 'lucide-react';
 import { Transaction, TransactionType } from '../../types';
 
@@ -57,6 +65,7 @@ interface AccountsViewProps {
   onSelectTransaction?: (tx: Transaction) => void;
   onOpenAdd?: (type?: TransactionType, accountId?: string) => void;
   onNavigateToFullFeed?: (accountId: string) => void;
+  onEditTransaction?: (tx: Transaction) => void;
 }
 
 export const AccountsView: React.FC<AccountsViewProps> = ({
@@ -64,23 +73,42 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
   onSelectTransaction,
   onOpenAdd,
   onNavigateToFullFeed,
+  onEditTransaction,
 }) => {
   const {
     accounts,
     creditCards,
+    settings,
     summary,
     addAccount,
     updateAccount,
     deleteAccount,
+    reorderAccounts,
+    setAccountSortPreference,
     addCreditCard,
     updateCreditCard,
     deleteCreditCard,
+    reorderCreditCards,
+    setCardSortPreference,
     payCreditCardBill,
     reconcileAccount,
   } = useMoney();
 
+  // Sort preferences from settings
+  const accountSortPreference: AccountSortOption = settings.accountSortPreference || 'CUSTOM';
+  const cardSortPreference: CardSortOption = settings.cardSortPreference || 'CUSTOM';
+
+  // Modals for manual drag & drop / reordering
+  const [showArrangeAccountsModal, setShowArrangeAccountsModal] = useState(false);
+  const [showArrangeCardsModal, setShowArrangeCardsModal] = useState(false);
+
   // Active View Filter Tab
   const [activeTab, setActiveTab] = useState<'ALL' | 'BANKS' | 'CARDS' | 'WALLETS'>('ALL');
+
+  // Deck Stacking Modes (Cards on cards, banks over banks, wallets on wallets)
+  const [isCardsStacked, setIsCardsStacked] = useState(true);
+  const [isBanksStacked, setIsBanksStacked] = useState(true);
+  const [isWalletsStacked, setIsWalletsStacked] = useState(true);
 
   // Transactions Statement Modal for Account / Card
   const [selectedAccountForTxModal, setSelectedAccountForTxModal] = useState<Account | null>(null);
@@ -133,6 +161,10 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
   // Convert Bank to Card Modal
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [accountToConvert, setAccountToConvert] = useState<Account | null>(null);
+
+  // Convert Credit Card to Account Modal
+  const [showConvertCardModal, setShowConvertCardModal] = useState(false);
+  const [cardToConvert, setCardToConvert] = useState<CreditCard | null>(null);
 
   // Reconciliation Modal
   const [showReconciliationModal, setShowReconciliationModal] = useState(false);
@@ -436,6 +468,8 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       ),
       rightText: formatINR(a.calculatedBalance),
       rightTextColor: a.calculatedBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500',
+      isBankAccount: true,
+      bankTheme: a.institution || a.name || a.type,
     }));
   }, [accounts]);
 
@@ -490,9 +524,65 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
     return getCardsForBank(editCardIssuer);
   }, [editCardIssuer]);
 
-  // Active non-deleted accounts and cards
-  const activeAccounts = useMemo(() => accounts.filter(a => !a.isDeleted), [accounts]);
-  const activeCards = useMemo(() => creditCards.filter(c => !c.isDeleted), [creditCards]);
+  // Active non-deleted accounts and cards sorted by user preference
+  const sortedAccounts = useMemo(() => {
+    const raw = accounts.filter(a => !a.isDeleted);
+    const cloned = [...raw];
+    switch (accountSortPreference) {
+      case 'CUSTOM':
+        return cloned.sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+      case 'BALANCE_DESC':
+        return cloned.sort((a, b) => (b.calculatedBalance || 0) - (a.calculatedBalance || 0));
+      case 'BALANCE_ASC':
+        return cloned.sort((a, b) => (a.calculatedBalance || 0) - (b.calculatedBalance || 0));
+      case 'NAME_ASC':
+        return cloned.sort((a, b) => a.name.localeCompare(b.name));
+      case 'NAME_DESC':
+        return cloned.sort((a, b) => b.name.localeCompare(a.name));
+      case 'TYPE':
+        return cloned.sort((a, b) => a.type.localeCompare(b.type));
+      case 'INSTITUTION':
+        return cloned.sort((a, b) => a.institution.localeCompare(b.institution));
+      case 'DATE_NEWEST':
+        return cloned.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      case 'DATE_OLDEST':
+        return cloned.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+      default:
+        return cloned;
+    }
+  }, [accounts, accountSortPreference]);
+
+  const sortedCards = useMemo(() => {
+    const raw = creditCards.filter(c => !c.isDeleted);
+    const cloned = [...raw];
+    switch (cardSortPreference) {
+      case 'CUSTOM':
+        return cloned.sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+      case 'OUTSTANDING_DESC':
+        return cloned.sort((a, b) => (b.currentOutstanding || 0) - (a.currentOutstanding || 0));
+      case 'OUTSTANDING_ASC':
+        return cloned.sort((a, b) => (a.currentOutstanding || 0) - (b.currentOutstanding || 0));
+      case 'LIMIT_DESC':
+        return cloned.sort((a, b) => (b.creditLimit || 0) - (a.creditLimit || 0));
+      case 'LIMIT_ASC':
+        return cloned.sort((a, b) => (a.creditLimit || 0) - (b.creditLimit || 0));
+      case 'NAME_ASC':
+        return cloned.sort((a, b) => a.name.localeCompare(b.name));
+      case 'ISSUER_ASC':
+        return cloned.sort((a, b) => a.issuer.localeCompare(b.issuer));
+      case 'DUE_DATE_ASC':
+        return cloned.sort((a, b) => (a.dueDate || 31) - (b.dueDate || 31));
+      case 'UTILIZATION_DESC': {
+        const getUtil = (c: CreditCard) => (c.creditLimit > 0 ? c.currentOutstanding / c.creditLimit : 0);
+        return cloned.sort((a, b) => getUtil(b) - getUtil(a));
+      }
+      default:
+        return cloned;
+    }
+  }, [creditCards, cardSortPreference]);
+
+  const activeAccounts = sortedAccounts;
+  const activeCards = sortedCards;
 
   // Derived Bank vs Wallet accounts
   const bankAccounts = useMemo(() => activeAccounts.filter(a => a.type !== 'WALLET' && a.type !== 'CASH'), [activeAccounts]);
@@ -555,6 +645,20 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
     setShowWalletCatalogModal(false);
   };
 
+  const negativeAccounts = useMemo(() => {
+    return accounts.filter(a => !a.isDeleted && (a.calculatedBalance || 0) < 0);
+  }, [accounts]);
+
+  const handleAutoHealBalances = () => {
+    negativeAccounts.forEach(acc => {
+      const deficiency = Math.abs(acc.calculatedBalance || 0);
+      const currentOpening = acc.openingBalance || 0;
+      updateAccount(acc.id, {
+        openingBalance: currentOpening + deficiency,
+      });
+    });
+  };
+
   return (
     <div className="space-y-6 pb-24 max-w-2xl mx-auto">
       {/* Account Overview Cards */}
@@ -579,12 +683,39 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
         </div>
       </div>
 
+      {/* Auto-Heal Banner */}
+      {negativeAccounts.length > 0 && (
+        <div className="p-4 rounded-3xl bg-amber-500/5 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-900/40 space-y-3 animate-in slide-in-from-top-4 duration-200">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="text-amber-500 shrink-0 mt-0.5" size={18} />
+            <div className="space-y-1">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                Negative Balances Detected
+              </h4>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                Some of your imported accounts are currently in negative balance (e.g., <strong>{negativeAccounts.map(a => a.name).join(', ')}</strong>). 
+                This usually occurs when you have logged expenses but haven't set an accurate Opening Balance for the account yet.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-end space-x-3 pt-1">
+            <button
+              onClick={handleAutoHealBalances}
+              className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[11px] flex items-center space-x-1.5 transition-all shadow-sm"
+            >
+              <Sparkles size={12} />
+              <span>Auto-Heal to ₹0</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Filter Tabs & Quick Action Buttons */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center space-x-1 p-1 bg-slate-200/60 dark:bg-slate-800/80 rounded-2xl overflow-x-auto max-w-full">
+        <div className="flex items-center space-x-1 p-1 pr-2 bg-slate-200/60 dark:bg-slate-800/80 rounded-2xl overflow-x-auto scrollbar-none no-scrollbar max-w-full scroll-smooth">
           <button
             onClick={() => setActiveTab('ALL')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
               activeTab === 'ALL'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -594,7 +725,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('BANKS')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
               activeTab === 'BANKS'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -604,7 +735,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('CARDS')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
               activeTab === 'CARDS'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -614,7 +745,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('WALLETS')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
               activeTab === 'WALLETS'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -655,20 +786,34 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* Credit Cards Section */}
       {(activeTab === 'ALL' || activeTab === 'CARDS') && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
                 <CreditCardIcon className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                 <span>Credit Cards</span>
               </h3>
-              <p className="text-[11px] text-slate-500">
-                18 luxury textures, bank themes & bill trackers
-              </p>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <button
+                onClick={() => setIsCardsStacked(!isCardsStacked)}
+                className={`p-1.5 rounded-xl border text-xs font-semibold flex items-center space-x-1 transition-all cursor-pointer ${
+                  isCardsStacked
+                    ? 'bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-purple-300'
+                }`}
+                title={isCardsStacked ? 'Switch to Grid View' : 'Switch to Stacked Deck View'}
+              >
+                {isCardsStacked ? <Layers size={14} /> : <LayoutGrid size={14} />}
+                <span className="text-[11px] hidden sm:inline">{isCardsStacked ? 'Stacked' : 'Grid'}</span>
+              </button>
+              <CardSortSelector
+                currentSort={cardSortPreference}
+                onSelectSort={setCardSortPreference}
+                onOpenArrange={() => setShowArrangeCardsModal(true)}
+              />
               <button
                 onClick={() => setShowCatalogModal(true)}
-                className="px-2.5 py-1 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center space-x-1 border border-purple-200 dark:border-purple-800 transition-colors"
+                className="px-2.5 py-1 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center space-x-1 border border-purple-200 dark:border-purple-800 transition-colors cursor-pointer"
                 title="Browse Indian Bank Credit Cards Catalog"
               >
                 <Compass size={13} />
@@ -676,9 +821,10 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
               </button>
               <button
                 onClick={() => setShowAddCardModal(true)}
-                className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline flex items-center space-x-1"
+                className="px-2.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-xs transition-colors cursor-pointer"
+                title="Add Credit Card"
               >
-                <Plus size={14} />
+                <Plus size={13} />
                 <span>New Card</span>
               </button>
             </div>
@@ -692,37 +838,38 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
               <div className="flex items-center justify-center space-x-2">
                 <button
                   onClick={() => setShowCatalogModal(true)}
-                  className="px-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200 dark:border-slate-700 flex items-center space-x-1"
+                  className="px-3.5 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs border border-slate-200 dark:border-slate-700 flex items-center space-x-1 cursor-pointer"
                 >
                   <Compass size={14} />
                   <span>Browse Bank Catalog</span>
                 </button>
                 <button
                   onClick={() => setShowAddCardModal(true)}
-                  className="px-4 py-2 rounded-2xl bg-purple-600 text-white font-bold text-xs shadow-md"
+                  className="px-4 py-2 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md cursor-pointer"
                 >
                   Add Custom Card
                 </button>
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4">
-              {activeCards.map(card => (
-                <CardVisual
-                  key={card.id}
-                  card={card}
-                  onViewTransactions={() => handleViewCardTransactions(card)}
-                  onEdit={() => openEditCard(card)}
-                  onDelete={() => setItemToDelete({ type: 'CARD', id: card.id, name: card.name })}
-                  onPayBill={() => {
-                    setSelectedCardForPay(card);
-                    setPayAmountInput(card.currentOutstanding.toString());
-                    if (activeAccounts.length > 0) setSelectedBankForPay(activeAccounts[0].id);
-                    setShowCardPayModal(true);
-                  }}
-                />
-              ))}
-            </div>
+            <StackedCardsDeck
+              cards={activeCards}
+              isStacked={isCardsStacked}
+              onToggleStacked={() => setIsCardsStacked(!isCardsStacked)}
+              onViewTransactions={card => handleViewCardTransactions(card)}
+              onEdit={card => openEditCard(card)}
+              onDelete={card => setItemToDelete({ type: 'CARD', id: card.id, name: card.name })}
+              onConvert={card => {
+                setCardToConvert(card);
+                setShowConvertCardModal(true);
+              }}
+              onPayBill={card => {
+                setSelectedCardForPay(card);
+                setPayAmountInput(card.currentOutstanding.toString());
+                if (activeAccounts.length > 0) setSelectedBankForPay(activeAccounts[0].id);
+                setShowCardPayModal(true);
+              }}
+            />
           )}
         </div>
       )}
@@ -730,20 +877,34 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* Bank Accounts Section */}
       {(activeTab === 'ALL' || activeTab === 'BANKS') && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
                 <Building className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>Bank Accounts & Deposits</span>
               </h3>
-              <p className="text-[11px] text-slate-500">
-                Savings, salary, current accounts & fixed deposits
-              </p>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <button
+                onClick={() => setIsBanksStacked(!isBanksStacked)}
+                className={`p-1.5 rounded-xl border text-xs font-semibold flex items-center space-x-1 transition-all cursor-pointer ${
+                  isBanksStacked
+                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-300'
+                }`}
+                title={isBanksStacked ? 'Switch to Grid View' : 'Switch to Stacked Deck View'}
+              >
+                {isBanksStacked ? <Layers size={14} /> : <LayoutGrid size={14} />}
+                <span className="text-[11px] hidden sm:inline">{isBanksStacked ? 'Stacked' : 'Grid'}</span>
+              </button>
+              <AccountSortSelector
+                currentSort={accountSortPreference}
+                onSelectSort={setAccountSortPreference}
+                onOpenArrange={() => setShowArrangeAccountsModal(true)}
+              />
               <button
                 onClick={() => setShowBankCatalogModal(true)}
-                className="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center space-x-1 border border-emerald-200 dark:border-emerald-800 transition-colors"
+                className="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center space-x-1 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
                 title="Browse Indian Bank Accounts & FD Catalogue"
               >
                 <Compass size={13} />
@@ -751,53 +912,13 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
               </button>
               <button
                 onClick={() => setShowAddAccountModal(true)}
-                className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center space-x-1"
+                className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-xs transition-colors cursor-pointer"
+                title="Add Bank Account"
               >
-                <Plus size={14} />
+                <Plus size={13} />
                 <span>New Bank</span>
               </button>
             </div>
-          </div>
-
-          {/* Quick Bank Preset Chips */}
-          <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
-            {BANK_ACCOUNTS_CATALOG.slice(0, 8).map(item => {
-              const alreadyExists = activeAccounts.some(
-                a =>
-                  a.name.toLowerCase().includes(item.name.toLowerCase()) ||
-                  (a.institution.toLowerCase() === item.institution.toLowerCase() && a.type === item.type)
-              );
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    if (alreadyExists) {
-                      setShowBankCatalogModal(true);
-                    } else {
-                      handleQuickAddBankPreset(item);
-                    }
-                  }}
-                  className={`px-3 py-1.5 rounded-2xl text-xs font-semibold shrink-0 flex items-center space-x-2 border transition-all ${
-                    alreadyExists
-                      ? 'bg-emerald-50/60 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/60 text-emerald-800 dark:text-emerald-300'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-400 text-slate-700 dark:text-slate-300 shadow-2xs hover:shadow-xs'
-                  }`}
-                >
-                  <div
-                    className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[9px] font-black"
-                    style={{ backgroundColor: item.color }}
-                  >
-                    <IconHelper name={item.icon} className="w-2.5 h-2.5 text-white" />
-                  </div>
-                  <span>{item.name}</span>
-                  {alreadyExists ? (
-                    <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
-                  ) : (
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">+Add</span>
-                  )}
-                </button>
-              );
-            })}
           </div>
 
           {bankAccounts.length === 0 ? (
@@ -812,40 +933,37 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
               <div className="flex items-center justify-center space-x-2 pt-1">
                 <button
                   onClick={() => setShowBankCatalogModal(true)}
-                  className="px-4 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center space-x-1.5 transition-all"
+                  className="px-4 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center space-x-1.5 transition-all cursor-pointer"
                 >
                   <Compass size={14} />
                   <span>Browse Bank Catalog</span>
                 </button>
                 <button
                   onClick={() => setShowAddAccountModal(true)}
-                  className="px-4 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs transition-all"
+                  className="px-4 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer"
                 >
                   Add Custom Account
                 </button>
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3">
-              {bankAccounts.map(acc => (
-                <BankVisual
-                  key={acc.id}
-                  account={acc}
-                  onViewTransactions={() => handleViewAccountTransactions(acc)}
-                  onEdit={() => openEditAccount(acc)}
-                  onConvert={() => {
-                    setAccountToConvert(acc);
-                    setShowConvertModal(true);
-                  }}
-                  onDelete={() => setItemToDelete({ type: 'ACCOUNT', id: acc.id, name: acc.name })}
-                  onReconcile={() => {
-                    setSelectedAccForReconciliation(acc);
-                    setStatementBalanceInput(acc.calculatedBalance.toString());
-                    setShowReconciliationModal(true);
-                  }}
-                />
-              ))}
-            </div>
+            <StackedBanksDeck
+              accounts={bankAccounts}
+              isStacked={isBanksStacked}
+              onToggleStacked={() => setIsBanksStacked(!isBanksStacked)}
+              onViewTransactions={acc => handleViewAccountTransactions(acc)}
+              onEdit={acc => openEditAccount(acc)}
+              onConvert={acc => {
+                setAccountToConvert(acc);
+                setShowConvertModal(true);
+              }}
+              onDelete={acc => setItemToDelete({ type: 'ACCOUNT', id: acc.id, name: acc.name })}
+              onReconcile={acc => {
+                setSelectedAccForReconciliation(acc);
+                setStatementBalanceInput(acc.calculatedBalance.toString());
+                setShowReconciliationModal(true);
+              }}
+            />
           )}
         </div>
       )}
@@ -853,20 +971,37 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* Digital Wallets & Cash Section */}
       {(activeTab === 'ALL' || activeTab === 'WALLETS') && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
                 <Wallet className="w-4 h-4 text-amber-500" />
                 <span>Digital Wallets, Cash & Meal Cards</span>
               </h3>
-              <p className="text-[11px] text-slate-500">
-                Amazon Pay, Paytm, PhonePe, CRED Cash, Sodexo & petty cash
-              </p>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <button
+                onClick={() => setIsWalletsStacked(!isWalletsStacked)}
+                className={`p-1.5 rounded-xl border text-xs font-semibold flex items-center space-x-1 transition-all cursor-pointer ${
+                  isWalletsStacked
+                    ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-300'
+                }`}
+                title={isWalletsStacked ? 'Switch to Grid View' : 'Switch to Stacked Deck View'}
+              >
+                {isWalletsStacked ? <Layers size={14} /> : <LayoutGrid size={14} />}
+                <span className="text-[11px] hidden sm:inline">{isWalletsStacked ? 'Stacked' : 'Grid'}</span>
+              </button>
+              <button
+                onClick={() => setShowArrangeAccountsModal(true)}
+                className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center space-x-1 border border-amber-200 dark:border-amber-800 transition-colors cursor-pointer"
+                title="Arrange Wallets & Cash order"
+              >
+                <Layers size={13} />
+                <span>Arrange</span>
+              </button>
               <button
                 onClick={() => setShowWalletCatalogModal(true)}
-                className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center space-x-1 border border-amber-200 dark:border-amber-800 transition-colors"
+                className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center space-x-1 border border-amber-200 dark:border-amber-800 transition-colors cursor-pointer"
                 title="Browse Indian Digital Wallets Catalog"
               >
                 <Sparkles size={13} />
@@ -882,34 +1017,13 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                   setNewAccTheme('bank_cash');
                   setShowAddAccountModal(true);
                 }}
-                className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline flex items-center space-x-1"
+                className="px-2.5 py-1 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-xs transition-colors cursor-pointer"
+                title="Add Custom Wallet or Cash"
               >
-                <Plus size={14} />
+                <Plus size={13} />
                 <span>Custom</span>
               </button>
             </div>
-          </div>
-
-          {/* Quick preset chips */}
-          <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
-            {DIGITAL_WALLETS_CATALOG.slice(0, 6).map(item => {
-              const alreadyExists = activeAccounts.some(a => a.name.toLowerCase().includes(item.name.toLowerCase()) || a.institution.toLowerCase() === item.institution.toLowerCase());
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleQuickAddWalletPreset(item)}
-                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold shrink-0 flex items-center space-x-1.5 transition-all shadow-xs ${
-                    alreadyExists
-                      ? 'bg-slate-100 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                      : 'bg-white dark:bg-slate-900 border-amber-200/80 dark:border-amber-800/60 text-slate-800 dark:text-slate-200 hover:border-amber-400'
-                  }`}
-                >
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span>{item.name}</span>
-                  {!alreadyExists && <Plus size={11} className="text-amber-500 ml-0.5" />}
-                </button>
-              );
-            })}
           </div>
 
           {walletAccounts.length === 0 ? (
@@ -920,7 +1034,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
               <div className="flex items-center justify-center space-x-2">
                 <button
                   onClick={() => setShowWalletCatalogModal(true)}
-                  className="px-4 py-2 rounded-2xl bg-amber-600 text-white font-bold text-xs shadow-md flex items-center space-x-1.5"
+                  className="px-4 py-2 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-md flex items-center space-x-1.5 cursor-pointer"
                 >
                   <Sparkles size={14} />
                   <span>Browse Wallets Catalog</span>
@@ -928,26 +1042,23 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3">
-              {walletAccounts.map(acc => (
-                <BankVisual
-                  key={acc.id}
-                  account={acc}
-                  onViewTransactions={() => handleViewAccountTransactions(acc)}
-                  onEdit={() => openEditAccount(acc)}
-                  onConvert={() => {
-                    setAccountToConvert(acc);
-                    setShowConvertModal(true);
-                  }}
-                  onDelete={() => setItemToDelete({ type: 'ACCOUNT', id: acc.id, name: acc.name })}
-                  onReconcile={() => {
-                    setSelectedAccForReconciliation(acc);
-                    setStatementBalanceInput(acc.calculatedBalance.toString());
-                    setShowReconciliationModal(true);
-                  }}
-                />
-              ))}
-            </div>
+            <StackedWalletsDeck
+              accounts={walletAccounts}
+              isStacked={isWalletsStacked}
+              onToggleStacked={() => setIsWalletsStacked(!isWalletsStacked)}
+              onViewTransactions={acc => handleViewAccountTransactions(acc)}
+              onEdit={acc => openEditAccount(acc)}
+              onConvert={acc => {
+                setAccountToConvert(acc);
+                setShowConvertModal(true);
+              }}
+              onDelete={acc => setItemToDelete({ type: 'ACCOUNT', id: acc.id, name: acc.name })}
+              onReconcile={acc => {
+                setSelectedAccForReconciliation(acc);
+                setStatementBalanceInput(acc.calculatedBalance.toString());
+                setShowReconciliationModal(true);
+              }}
+            />
           )}
         </div>
       )}
@@ -956,7 +1067,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* ADD ACCOUNT MODAL */}
       {/* ========================================================================= */}
       {showAddAccountModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-md w-full space-y-4 border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
@@ -1127,7 +1238,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* EDIT ACCOUNT MODAL */}
       {/* ========================================================================= */}
       {showEditAccountModal && editingAccount && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-md w-full space-y-4 border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
@@ -1357,7 +1468,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* ADD CREDIT CARD MODAL */}
       {/* ========================================================================= */}
       {showAddCardModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-md w-full space-y-4 border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
@@ -1445,11 +1556,11 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
               </div>
             </div>
 
-            {/* 18 Rich Visual Card Themes Picker */}
+            {/* Rich Visual Card Themes Picker */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Card Theme & Metallic Textures (18 Styles)
+                  Card Theme & Metallic Textures ({CARD_THEMES.length} Luxury Styles)
                 </label>
                 <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
                   {CARD_THEMES.find(t => t.id === newCardTheme)?.name}
@@ -1558,7 +1669,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* EDIT CREDIT CARD MODAL */}
       {/* ========================================================================= */}
       {showEditCardModal && editingCard && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-md w-full space-y-4 border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
@@ -1648,11 +1759,11 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
               </div>
             </div>
 
-            {/* 18 Rich Visual Card Themes Picker */}
+            {/* Rich Visual Card Themes Picker */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Card Theme & Metallic Textures (18 Styles)
+                  Card Theme & Metallic Textures ({CARD_THEMES.length} Luxury Styles)
                 </label>
                 <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
                   {CARD_THEMES.find(t => t.id === editCardTheme)?.name}
@@ -1786,7 +1897,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* BROWSE ALL BANK CREDIT CARDS CATALOG MODAL */}
       {/* ========================================================================= */}
       {showCatalogModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-2xl w-full space-y-4 border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center space-x-2.5">
@@ -1809,7 +1920,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
             {/* Search & Filter Bar */}
             <div className="space-y-2.5">
               <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 <input
                   type="text"
                   placeholder="Search by card name, bank, cashback, lounge, UPI..."
@@ -1939,7 +2050,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* DELETE CONFIRMATION DIALOG */}
       {/* ========================================================================= */}
       {itemToDelete && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-sm w-full space-y-4 border border-rose-200 dark:border-rose-900/40 shadow-2xl">
             <div className="flex items-center space-x-3 text-rose-600 dark:text-rose-400">
               <div className="p-2 rounded-2xl bg-rose-100 dark:bg-rose-950/50">
@@ -1971,7 +2082,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
 
       {/* Account Reconciliation Modal */}
       {showReconciliationModal && selectedAccForReconciliation && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-sm w-full space-y-4 border border-slate-200 dark:border-slate-800 shadow-2xl">
             <div className="flex items-center justify-between border-b pb-2">
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">Account Reconciliation</h3>
@@ -2045,7 +2156,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
 
       {/* Credit Card Bill Payment Modal */}
       {showCardPayModal && selectedCardForPay && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-sm w-full space-y-4 border border-slate-200 dark:border-slate-800 shadow-2xl">
             <div className="flex items-center justify-between border-b pb-2">
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">Pay Credit Card Bill</h3>
@@ -2097,7 +2208,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* DIGITAL WALLETS & CASH CATALOG MODAL */}
       {/* ========================================================================= */}
       {showWalletCatalogModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-xl w-full space-y-4 border border-amber-200/80 dark:border-amber-900/40 shadow-2xl max-h-[90vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
@@ -2124,7 +2235,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
 
             {/* Search Bar */}
             <div className="relative shrink-0">
-              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search by wallet name, e-commerce app, or keyword..."
@@ -2158,7 +2269,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                   No wallets found matching your search.
                 </div>
               ) : (
-                filteredWalletCatalog.map(wItem => {
+                filteredWalletCatalog.map((wItem, idx) => {
                   const alreadyExists = activeAccounts.some(
                     a =>
                       a.name.toLowerCase() === wItem.name.toLowerCase() ||
@@ -2168,7 +2279,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
 
                   return (
                     <div
-                      key={wItem.id}
+                      key={`wallet_cat_${wItem.id}_${idx}`}
                       className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 hover:border-amber-400 dark:hover:border-amber-600 transition-all flex flex-col justify-between space-y-3 group"
                     >
                       <div>
@@ -2249,7 +2360,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       {/* INDIAN BANK ACCOUNTS & FD CATALOGUE MODAL */}
       {/* ========================================================================= */}
       {showBankCatalogModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-2xl w-full space-y-4 border border-emerald-200/80 dark:border-emerald-900/40 shadow-2xl max-h-[90vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
@@ -2276,7 +2387,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
 
             {/* Search Bar */}
             <div className="relative shrink-0">
-              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search by bank name, account type, perks, or interest rates..."
@@ -2310,7 +2421,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                   No bank accounts found matching your search.
                 </div>
               ) : (
-                filteredBankCatalog.map(bItem => {
+                filteredBankCatalog.map((bItem, idx) => {
                   const alreadyExists = activeAccounts.some(
                     a =>
                       a.name.toLowerCase() === bItem.name.toLowerCase() ||
@@ -2320,7 +2431,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
 
                   return (
                     <div
-                      key={bItem.id}
+                      key={`bank_cat_${bItem.id}_${idx}`}
                       className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 hover:border-emerald-400 dark:hover:border-emerald-600 transition-all flex flex-col justify-between space-y-3 group"
                     >
                       <div>
@@ -2412,6 +2523,29 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       )}
 
       {/* ========================================================================= */}
+      {/* ARRANGE / REORDER MODALS */}
+      {/* ========================================================================= */}
+      <ArrangeAccountsModal
+        isOpen={showArrangeAccountsModal}
+        onClose={() => setShowArrangeAccountsModal(false)}
+        accounts={activeAccounts}
+        onSaveOrder={(orderedIds) => {
+          reorderAccounts(orderedIds);
+          setAccountSortPreference('CUSTOM');
+        }}
+      />
+
+      <ArrangeCardsModal
+        isOpen={showArrangeCardsModal}
+        onClose={() => setShowArrangeCardsModal(false)}
+        cards={activeCards}
+        onSaveOrder={(orderedIds) => {
+          reorderCreditCards(orderedIds);
+          setCardSortPreference('CUSTOM');
+        }}
+      />
+
+      {/* ========================================================================= */}
       {/* CONVERT BANK ACCOUNT TO CREDIT CARD MODAL */}
       {/* ========================================================================= */}
       <ConvertBankModal
@@ -2421,6 +2555,18 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
           setAccountToConvert(null);
         }}
         targetAccount={accountToConvert}
+      />
+
+      {/* ========================================================================= */}
+      {/* CONVERT CREDIT CARD TO BANK ACCOUNT MODAL */}
+      {/* ========================================================================= */}
+      <ConvertCreditCardModal
+        isOpen={showConvertCardModal}
+        onClose={() => {
+          setShowConvertCardModal(false);
+          setCardToConvert(null);
+        }}
+        targetCard={cardToConvert}
       />
 
       {/* ========================================================================= */}
@@ -2437,6 +2583,7 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
         onSelectTransaction={onSelectTransaction}
         onOpenAdd={onOpenAdd}
         onNavigateToFullFeed={onNavigateToFullFeed}
+        onEditTransaction={onEditTransaction}
       />
     </div>
   );

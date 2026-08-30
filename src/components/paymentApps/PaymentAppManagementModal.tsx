@@ -9,7 +9,6 @@ import {
   Check,
   Edit2,
   Trash2,
-  Palette,
   Sparkles,
   Smartphone,
   QrCode,
@@ -25,11 +24,6 @@ import {
   ShoppingBag,
   Receipt,
   Layers,
-  ChevronRight,
-  HelpCircle,
-  Copy,
-  CheckCircle2,
-  RotateCcw,
 } from 'lucide-react';
 
 interface PaymentAppManagementModalProps {
@@ -431,7 +425,7 @@ export const PaymentAppManagementModal: React.FC<PaymentAppManagementModalProps>
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6">
         
         {/* Header */}
@@ -447,9 +441,6 @@ export const PaymentAppManagementModal: React.FC<PaymentAppManagementModalProps>
                   {paymentApps.length} Active
                 </span>
               </h2>
-              <p className="text-xs text-slate-500">
-                Manage UPI apps, swipe terminals, wallets, and custom payment channels
-              </p>
             </div>
           </div>
 
@@ -540,10 +531,10 @@ export const PaymentAppManagementModal: React.FC<PaymentAppManagementModalProps>
 
               {/* Grid of Channels */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {filteredApps.map(app => {
+                {filteredApps.map((app, idx) => {
                   return (
                     <div
-                      key={app.id}
+                      key={`pay_app_${app.id}_${idx}`}
                       className="p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/80 flex items-center justify-between hover:border-emerald-300 dark:hover:border-emerald-700 transition-all group"
                     >
                       <div
@@ -606,10 +597,8 @@ export const PaymentAppManagementModal: React.FC<PaymentAppManagementModalProps>
                           <button
                             type="button"
                             onClick={() => {
-                              if (confirm(`Delete channel "${app.name}"?`)) {
-                                deletePaymentApp(app.id);
-                                showToast(`Deleted "${app.name}"`);
-                              }
+                              deletePaymentApp(app.id);
+                              showToast(`Deleted "${app.name}"`);
                             }}
                             className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
                             title="Delete Channel"
@@ -661,14 +650,14 @@ export const PaymentAppManagementModal: React.FC<PaymentAppManagementModalProps>
 
               {/* Catalogue Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {filteredCatalogue.map(template => {
+                {filteredCatalogue.map((template, idx) => {
                   const isAlreadyAdded = paymentApps.some(
                     p => p.name.toLowerCase() === template.name.toLowerCase()
                   );
 
                   return (
                     <div
-                      key={template.name}
+                      key={`pay_template_${template.name}_${idx}`}
                       className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 flex items-center justify-between hover:shadow-sm transition-all"
                     >
                       <div className="flex items-center space-x-3 flex-1 pr-2">

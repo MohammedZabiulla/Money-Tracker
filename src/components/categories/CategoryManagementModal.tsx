@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Category, TransactionType } from '../../types';
 import { Category3DIcon } from '../common/Category3DIcon';
@@ -28,6 +28,7 @@ interface CategoryManagementModalProps {
   onClose: () => void;
   onSelectCategory?: (category: Category) => void;
   initialType?: TransactionType;
+  initialCategoryToEdit?: Category | null;
 }
 
 export interface CategoryTemplate {
@@ -286,6 +287,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   onClose,
   onSelectCategory,
   initialType = 'EXPENSE',
+  initialCategoryToEdit,
 }) => {
   const { categories, addCategory, updateCategory, deleteCategory } = useMoney();
 
@@ -306,6 +308,19 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   const [color, setColor] = useState('#f43f5e');
   const [subcategoriesInput, setSubcategoriesInput] = useState('');
   const [newSubInput, setNewSubInput] = useState('');
+
+  // Auto-open edit mode if initialCategoryToEdit is provided
+  useEffect(() => {
+    if (isOpen && initialCategoryToEdit) {
+      setEditingCategory(initialCategoryToEdit);
+      setName(initialCategoryToEdit.name);
+      setType(initialCategoryToEdit.type || 'EXPENSE');
+      setIcon(initialCategoryToEdit.icon || 'ShoppingBag');
+      setColor(initialCategoryToEdit.color || '#f43f5e');
+      setSubcategoriesInput((initialCategoryToEdit.subcategories || []).join(', '));
+      setIsFormOpen(true);
+    }
+  }, [isOpen, initialCategoryToEdit]);
 
   if (!isOpen) return null;
 
@@ -433,14 +448,12 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
   const handleDelete = (catId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to remove this category?')) {
-      deleteCategory(catId);
-      showToast('Category removed');
-    }
+    deleteCategory(catId);
+    showToast('Category removed');
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in-50">
+    <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in-50">
       <div className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden relative">
         
         {/* Toast Notification */}
@@ -509,7 +522,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                 </p>
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {subcategoriesInput.split(',').filter(Boolean).slice(0, 3).map((sub, idx) => (
-                    <span key={idx} className="text-[10px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium">
+                    <span key={`${sub.trim()}-${idx}`} className="text-[10px] px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium">
                       {sub.trim()}
                     </span>
                   ))}
@@ -731,7 +744,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                   <div className="flex items-center space-x-2 text-emerald-800 dark:text-emerald-200">
                     <Sparkles size={16} className="text-emerald-600 shrink-0" />
                     <span>
-                      Tap <strong className="font-bold">+ Add</strong> to adopt any category instantly, or <strong className="font-bold">Customize</strong> to tweak it.
+                      Preset category catalogue and custom category editor
                     </span>
                   </div>
                 </div>
@@ -784,9 +797,9 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
                             {/* Subcategory Pills */}
                             <div className="flex flex-wrap gap-1 mt-1.5">
-                              {tpl.subcategories.slice(0, 4).map(sub => (
+                              {tpl.subcategories.slice(0, 4).map((sub, subIdx) => (
                                 <span
-                                  key={sub}
+                                  key={`${sub}-${subIdx}`}
                                   className="text-[9px] font-medium px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/70 text-slate-600 dark:text-slate-300"
                                 >
                                   {sub}
@@ -835,7 +848,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                 {filteredCategories.length === 0 ? (
                   <div className="text-center py-10 text-slate-400">
                     <p className="text-sm font-semibold">No active categories matching query</p>
-                    <p className="text-xs mt-1">Tap the "Preset Catalogue" tab above to add categories with 1 click!</p>
+                    <p className="text-xs mt-1">Select the "Preset Catalogue" tab above to add categories.</p>
                   </div>
                 ) : (
                   filteredCategories.map(cat => (

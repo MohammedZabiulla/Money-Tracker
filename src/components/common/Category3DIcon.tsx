@@ -52,7 +52,16 @@ const CATEGORY_3D_PALETTES: Record<string, GradientRecipe> = {
     accent: '#fbcfe8',
     fallbackIcon: 'ShoppingBag',
   },
-  // Commute & Travel
+  // Flights & Air Travel
+  flight_travel: {
+    from: '#0284c7',
+    via: '#0369a1',
+    to: '#1e3a8a',
+    shadow: 'rgba(2, 132, 199, 0.5)',
+    accent: '#bae6fd',
+    fallbackIcon: 'Plane',
+  },
+  // Commute & Transport (Cabs / Metro / Auto)
   transport: {
     from: '#f59e0b',
     via: '#f97316',
@@ -243,6 +252,124 @@ const CATEGORY_3D_PALETTES: Record<string, GradientRecipe> = {
   },
 };
 
+// Keyword matcher function to find the best 3D palette & icon
+function matchCategoryPalette(categoryName?: string, name?: string, customColor?: string): { palette: GradientRecipe; iconName: string } {
+  const text = `${categoryName || ''} ${name || ''}`.toLowerCase();
+
+  // 1. Flight / Aviation / Airport / Plane
+  if (/flight|plane|airline|airport|airways|indigo|airindia|vistara|spicejet|emirates|ticket|boarding|boardingpass|air\s*ticket|flight\s*ticket|flightbooking/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.flight_travel, iconName: 'Plane' };
+  }
+
+  // 2. Travel / Holidays / Vacation / Tourism
+  if (/travel|transit|trip|vacation|holiday|tour|hotel|resort|airbnb|makemytrip|easemytrip|cleartrip|yatra|booking/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.travel_holidays, iconName: 'Plane' };
+  }
+
+  // 3. Commute / Cabs / Auto / Metro / Train
+  if (/cab|uber|ola|auto|taxi|metro|train|irctc|bus|commute|transport|ride|rapido|fastag|toll/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.transport, iconName: 'Car' };
+  }
+
+  // 4. Fuel / Petrol / Diesel / Gas / CNG
+  if (/fuel|petrol|diesel|cng|gas\s*station|shell|indianoil|hpcl|bpcl/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.fuel_petrol, iconName: 'Fuel' };
+  }
+
+  // 5. Food & Dining / Restaurant / Swiggy / Zomato
+  if (/food|dining|swiggy|zomato|restaurant|cafe|meal|snack|dinner|lunch|breakfast|pizza|burger|starbucks|mcdonalds|eat|beverage|drink|bar|pub/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.food_dining, iconName: 'Utensils' };
+  }
+
+  // 6. Groceries / Blinkit / Zepto / Supermarket
+  if (/grocer|blinkit|zepto|instamart|bigbasket|supermarket|vegetable|fruit|dairy|milk|kirana|dmart|spencer/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.groceries, iconName: 'ShoppingCart' };
+  }
+
+  // 7. Shopping / E-commerce / Apparel
+  if (/shop|amazon|flipkart|myntra|ajio|meesho|cloth|apparel|shoe|fashion|mall|electronic|gadget|zara|h&m/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.shopping, iconName: 'ShoppingBag' };
+  }
+
+  // 8. Bills / Utilities / Electricity / Recharge
+  if (/bill|utility|electricity|power|water|gas|recharge|mobile|wifi|broadband|dth|airtel|jio|vi|bescom|tneb|cesc|postpaid|prepaid/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.bills_utilities, iconName: 'Receipt' };
+  }
+
+  // 9. Rent / Housing / Maintenance
+  if (/rent|house|flat|apartment|society|maintenance|landlord|home|decor|furniture/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.home_rent, iconName: 'Home' };
+  }
+
+  // 10. Medical / Doctor / Pharmacy / Health
+  if (/health|medic|pharma|doctor|hospital|clinic|1mg|apollo|pharmeasy|dentist|lab|surgery|diagnostic/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.health_medical, iconName: 'HeartPulse' };
+  }
+
+  // 11. Fitness / Gym / Sports
+  if (/gym|fitness|cult|workout|sport|badminton|football|cricket|yoga|swimming/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.fitness_sports, iconName: 'Dumbbell' };
+  }
+
+  // 12. Entertainment / Movies / Cinema / OTT
+  if (/movie|cinema|inox|pvr|bookmyshow|theatre|ott|netflix|prime|hotstar|spotify|youtube|game|gaming|playstation/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.entertainment_ott, iconName: 'Film' };
+  }
+
+  // 13. Education / Courses / Books
+  if (/education|school|college|tuition|course|book|exam|upskill|udemy|coursera/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.education_learning, iconName: 'GraduationCap' };
+  }
+
+  // 14. Investments / Stocks / SIP / Mutual Funds
+  if (/invest|sip|mutual\s*fund|stock|share|groww|zerodha|upstox|crypto|fund|trading/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.investments_stocks, iconName: 'TrendingUp' };
+  }
+
+  // 15. Salary / Income / Refund / Cashback
+  if (/salary|payroll|income|bonus|cashback|refund|dividend/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.salary_income, iconName: 'Briefcase' };
+  }
+
+  // 16. Credit Card Bill Payment
+  if (/card\s*payment|card\s*bill|credit\s*card\s*bill|cred|bill\s*pay/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.card_payment, iconName: 'CreditCard' };
+  }
+
+  // 17. Bank Transfer / Self Transfer
+  if (/transfer|neft|rtgs|imps|upi|self\s*transfer/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.transfer, iconName: 'ArrowRightLeft' };
+  }
+
+  // 18. Lend / Borrow / Loan / Debt
+  if (/lend|borrow|loan|debt|credit|khata|dues|advance|lent/.test(text)) {
+    return { palette: CATEGORY_3D_PALETTES.khata_lent, iconName: 'HandCoins' };
+  }
+
+  // Fallback: Check if name matches any Lucide icon
+  let resolvedIcon = name || 'Receipt';
+  if (resolvedIcon === 'HelpCircle' || !resolvedIcon) {
+    resolvedIcon = 'Receipt';
+  }
+
+  // Color sanitization to prevent white-on-white
+  let baseColor = customColor || '#3b82f6';
+  if (baseColor.toLowerCase() === '#ffffff' || baseColor.toLowerCase() === '#fff' || baseColor.toLowerCase() === '#f8fafc') {
+    baseColor = '#0284c7';
+  }
+
+  return {
+    palette: {
+      from: baseColor,
+      to: baseColor,
+      shadow: `${baseColor}60`,
+      accent: '#ffffff',
+      fallbackIcon: resolvedIcon,
+    },
+    iconName: resolvedIcon,
+  };
+}
+
 export const Category3DIcon: React.FC<Category3DIconProps> = ({
   name = 'HelpCircle',
   categoryName,
@@ -300,48 +427,18 @@ export const Category3DIcon: React.FC<Category3DIconProps> = ({
     roundedClass = 'rounded-full';
   }
 
-  // Find matching palette
-  let palette: GradientRecipe | null = null;
-
-  // Search by category key or name
-  if (categoryName) {
-    const cleanKey = categoryName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    for (const [key, p] of Object.entries(CATEGORY_3D_PALETTES)) {
-      if (cleanKey.includes(key) || key.includes(cleanKey)) {
-        palette = p;
-        break;
-      }
-    }
-  }
-
-  // Fallback search by icon name
-  if (!palette && name) {
-    for (const p of Object.values(CATEGORY_3D_PALETTES)) {
-      if (p.fallbackIcon.toLowerCase() === name.toLowerCase()) {
-        palette = p;
-        break;
-      }
-    }
-  }
-
-  // Default color-based palette if no match
-  if (!palette) {
-    const baseColor = color || '#3b82f6';
-    palette = {
-      from: baseColor,
-      to: baseColor,
-      shadow: `${baseColor}60`,
-      accent: '#ffffff',
-      fallbackIcon: name || 'Receipt',
-    };
-  }
+  const { palette, iconName } = matchCategoryPalette(categoryName, name, color);
 
   // Dynamic Icon Component
-  const IconComponent = (LucideIcons as any)[name] || (LucideIcons as any)[palette.fallbackIcon] || LucideIcons.Receipt;
+  const IconComponent =
+    (LucideIcons as any)[name && name !== 'HelpCircle' ? name : iconName] ||
+    (LucideIcons as any)[iconName] ||
+    (LucideIcons as any)[palette.fallbackIcon] ||
+    LucideIcons.Receipt;
 
   return (
     <div
-      className={`relative inline-flex items-center justify-center shrink-0 select-none ${roundedClass} ${className} ${
+      className={`relative inline-flex items-center justify-center shrink-0 select-none border border-black/10 dark:border-white/15 ${roundedClass} ${className} ${
         interactive ? 'transition-transform duration-200 hover:scale-108 hover:-translate-y-0.5 active:scale-95 cursor-pointer' : ''
       }`}
       style={{
@@ -373,11 +470,12 @@ export const Category3DIcon: React.FC<Category3DIconProps> = ({
       <div
         className="relative z-10 flex items-center justify-center text-white"
         style={{
-          filter: 'drop-shadow(0 2px 2.5px rgba(0, 0, 0, 0.4))',
+          filter: 'drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45))',
         }}
       >
-        <IconComponent size={iconSizePx} strokeWidth={2.5} className="text-white" />
+        <IconComponent size={iconSizePx} strokeWidth={2.4} className="text-white" />
       </div>
     </div>
   );
 };
+

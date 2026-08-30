@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { RecurringTransaction, RecurrenceFrequency, TransactionType } from '../../types';
 import { formatINR } from '../../lib/currency';
@@ -8,7 +8,6 @@ import { CustomDatePicker } from '../common/CustomDatePicker';
 import {
   calculateMonthlyCommitment,
   formatDueBadge,
-  calculateNextDueDate,
 } from '../../lib/recurringEngine';
 import {
   X,
@@ -25,30 +24,21 @@ import {
   Zap,
   Check,
   TrendingUp,
-  Building,
   CreditCard,
-  ArrowDownLeft,
-  ArrowUpRight,
   ShieldCheck,
   Search,
-  Filter,
   Layers,
   LayoutGrid,
   List,
-  Flame,
   Home,
-  Briefcase,
-  Wifi,
-  Tv,
-  Dumbbell,
   Shield,
-  Smartphone,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface RecurringManagementModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialCreate?: boolean;
 }
 
 const RECURRING_CATALOGUE_PRESETS = [
@@ -185,6 +175,7 @@ const RECURRING_CATALOGUE_PRESETS = [
 export const RecurringManagementModal: React.FC<RecurringManagementModalProps> = ({
   isOpen,
   onClose,
+  initialCreate = false,
 }) => {
   const {
     recurring,
@@ -333,6 +324,8 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
           rightText: formatINR(a.calculatedBalance),
           rightTextColor: a.calculatedBalance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600',
           icon: <Bank3DIcon name={a.institution || a.name} color={a.color || '#0284c7'} size="xs" />,
+          isBankAccount: true,
+          bankTheme: a.institution || a.name || a.type,
         });
       });
 
@@ -355,9 +348,11 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
         opts.push({
           value: c.id,
           label: c.name,
-          sublabel: `${c.issuer || 'Card'} •••• ${c.lastFourDigits || 'XXXX'}`,
-          rightText: `Limit ${formatINR(c.creditLimit)}`,
-          icon: <CreditCard size={14} className="text-indigo-500" />,
+          sublabel: `Due: ${formatINR(c.currentOutstanding)} • Avail: ${formatINR(Math.max(0, c.creditLimit - c.currentOutstanding))}`,
+          rightText: `Due: ${formatINR(c.currentOutstanding)}`,
+          isCreditCard: true,
+          cardTheme: c.cardTheme,
+          network: c.network,
         });
       });
 
@@ -384,8 +379,6 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
 
     return opts;
   }, [paymentApps]);
-
-  if (!isOpen) return null;
 
   const handleOpenAddForm = (preset?: typeof RECURRING_CATALOGUE_PRESETS[0]) => {
     setEditingRuleId(null);
@@ -421,6 +414,12 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
 
     setIsAddingNew(true);
   };
+
+  useEffect(() => {
+    if (isOpen && initialCreate) {
+      handleOpenAddForm();
+    }
+  }, [isOpen, initialCreate]);
 
   const handleOpenEdit = (rule: RecurringTransaction) => {
     setEditingRuleId(rule.id);
@@ -524,9 +523,11 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
     }
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[92vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6">
+    <div className="fixed inset-0 z-[100] bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 h-[92vh] sm:h-auto sm:max-h-[88vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6">
         {/* Header */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900 shrink-0">
           <div className="flex items-center space-x-3">
@@ -537,9 +538,6 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
               <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
                 <span>Recurring Payments & Auto-Billing</span>
               </h2>
-              <p className="text-xs text-slate-500">
-                Auto-generate rent, SIPs, salary, and utility bills on due dates
-              </p>
             </div>
           </div>
           <button
@@ -746,24 +744,17 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
               </p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
                 <button
-                  onClick={() => handleOpenAddForm(RECURRING_CATALOGUE_PRESETS[0])}
-                  className="px-3.5 py-2 rounded-2xl bg-indigo-600 text-white text-xs font-bold inline-flex items-center space-x-1.5 shadow-md shadow-indigo-600/20"
+                  onClick={() => handleOpenAddForm()}
+                  className="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold inline-flex items-center space-x-2 shadow-md shadow-indigo-600/25 transition-all cursor-pointer active:scale-95"
                 >
-                  <Home size={14} />
-                  <span>+ Setup House Rent</span>
-                </button>
-                <button
-                  onClick={() => handleOpenAddForm(RECURRING_CATALOGUE_PRESETS[2])}
-                  className="px-3.5 py-2 rounded-2xl bg-emerald-600 text-white text-xs font-bold inline-flex items-center space-x-1.5 shadow-md shadow-emerald-600/20"
-                >
-                  <TrendingUp size={14} />
-                  <span>+ Setup SIP</span>
+                  <Plus size={15} strokeWidth={2.5} />
+                  <span>Add Recurring Payment</span>
                 </button>
               </div>
             </div>
           ) : viewLayout === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {filteredList.map(rule => {
+              {filteredList.map((rule, idx) => {
                 const cat = categories.find(c => c.id === rule.categoryId);
                 const isIncome = rule.type === 'INCOME';
                 const isInvest = rule.type === 'INVESTMENT_CONTRIBUTION';
@@ -771,7 +762,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
 
                 return (
                   <div
-                    key={rule.id}
+                    key={`rec_grid_${rule.id}_${idx}`}
                     className={`p-4 rounded-3xl border transition-all flex flex-col justify-between ${
                       rule.isActive
                         ? 'bg-white dark:bg-slate-850 border-slate-200/80 dark:border-slate-750 shadow-xs hover:border-indigo-400'
@@ -871,7 +862,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
             </div>
           ) : (
             <div className="space-y-2.5">
-              {filteredList.map(rule => {
+              {filteredList.map((rule, idx) => {
                 const cat = categories.find(c => c.id === rule.categoryId);
                 const isIncome = rule.type === 'INCOME';
                 const isInvest = rule.type === 'INVESTMENT_CONTRIBUTION';
@@ -879,7 +870,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
 
                 return (
                   <div
-                    key={rule.id}
+                    key={`rec_list_${rule.id}_${idx}`}
                     className={`p-3.5 rounded-3xl border transition-all flex items-center justify-between ${
                       rule.isActive
                         ? 'bg-white dark:bg-slate-850 border-slate-200/80 dark:border-slate-750 shadow-xs'
@@ -953,7 +944,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
 
         {/* Add / Edit Form Modal Sub-view */}
         {isAddingNew && (
-          <div className="fixed inset-0 z-60 bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="fixed inset-0 z-[110] bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
             <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6">
               <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center space-x-2">

@@ -11,6 +11,7 @@ import {
 import { CategorySpending } from '../../../lib/accountingEngine';
 import { formatINR, formatCompactINR } from '../../../lib/currency';
 import { ArrowDownUp, Layers } from 'lucide-react';
+import { CustomSelect } from '../../common/CustomSelect';
 
 interface CategoryBarChartProps {
   categorySpending: CategorySpending[];
@@ -114,15 +115,17 @@ export const CategoryBarChart: React.FC<CategoryBarChartProps> = ({
 
         <div className="flex items-center space-x-1">
           <span className="text-[10px] font-semibold text-slate-400">Sort:</span>
-          <select
-            value={sortBy}
-            onChange={e => setSortBy(e.target.value as any)}
-            className="text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg px-2 py-1 outline-none border border-slate-200 dark:border-slate-700"
-          >
-            <option value="amount">Amount</option>
-            <option value="name">Name</option>
-            <option value="count">Transactions</option>
-          </select>
+          <div className="w-[120px]">
+            <CustomSelect
+              value={sortBy}
+              onChange={val => setSortBy(val as any)}
+              options={[
+                { value: 'amount', label: 'Amount' },
+                { value: 'name', label: 'Name' },
+                { value: 'count', label: 'Transactions' },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
