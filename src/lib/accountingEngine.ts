@@ -72,6 +72,11 @@ export function recalculateAllBalances(
     if (card.name) cardNameMap.set(card.name.toLowerCase().trim(), card.id);
   });
 
+  const investmentMap = new Map<string, { invested: number, current: number }>();
+  initialInvestments.forEach(inv => {
+    investmentMap.set(inv.id, { invested: inv.investedAmount || 0, current: inv.currentValue || 0 });
+  });
+
   const loanPrincipalMap = new Map<string, number>();
   initialLoans.forEach(loan => loanPrincipalMap.set(loan.id, loan.principalAmount || 0));
 
@@ -88,16 +93,16 @@ export function recalculateAllBalances(
       const dateCompare = dateA.localeCompare(dateB);
       if (dateCompare !== 0) return dateCompare;
       
-      const timeA = a.time || '00:00';
-      const timeB = b.time || '00:00';
+      const timeA = a.time || '00:00:00';
+      const timeB = b.time || '00:00:00';
       const timeCompare = timeA.localeCompare(timeB);
       if (timeCompare !== 0) return timeCompare;
       
-      const tsA = a.timestamp || 0;
-      const tsB = b.timestamp || 0;
-      if (tsA && tsB && tsA !== tsB) return tsA - tsB;
+      const tsA = a.timestamp || a.createdAt || 0;
+      const tsB = b.timestamp || b.createdAt || 0;
+      if (tsA !== tsB) return tsA - tsB;
       
-      return 0;
+      return (a.id || '').localeCompare(b.id || '');
     });
 
   // Apply ledger mutations
@@ -209,16 +214,23 @@ export function recalculateAllBalances(
         break;
 
       case 'CARD_PAYMENT':
-        // Source bank pays credit card -> bank decreases, card liability decreases
-        const payBankId = effectiveAccountId || effectiveToAccountId;
-        if (payBankId && accountMap.has(payBankId)) {
-          const bankBal = accountMap.get(payBankId)!;
-          accountMap.set(payBankId, safeSubtract(bankBal, amount));
+        // Source pays credit card -> source decreases (or liability increases if card), dest liability decreases
+        const paySourceAccountId = effectiveAccountId || effectiveToAccountId;
+        const paySourceCardId = (tx.accountId || tx.toAccountId) ? undefined : tx.creditCardId;
+
+        // If paying FROM a credit card (rare, but supported)
+        if (!paySourceAccountId && paySourceCardId && cardMap.has(paySourceCardId)) {
+          const srcCardBal = cardMap.get(paySourceCardId)!;
+          cardMap.set(paySourceCardId, safeAdd(srcCardBal, amount)); // Paying from a card increases its debt
+        } else if (paySourceAccountId && accountMap.has(paySourceAccountId)) {
+          const bankBal = accountMap.get(paySourceAccountId)!;
+          accountMap.set(paySourceAccountId, safeSubtract(bankBal, amount));
         }
-        const payCardId = effectiveToCardId || effectiveCardId;
-        if (payCardId && cardMap.has(payCardId)) {
-          const cardBal = cardMap.get(payCardId)!;
-          cardMap.set(payCardId, safeSubtract(cardBal, amount));
+
+        const payDestCardId = effectiveToCardId || (paySourceCardId ? undefined : effectiveCardId);
+        if (payDestCardId && cardMap.has(payDestCardId)) {
+          const destCardBal = cardMap.get(payDestCardId)!;
+          cardMap.set(payDestCardId, safeSubtract(destCardBal, amount));
         }
         break;
 
@@ -230,6 +242,13 @@ export function recalculateAllBalances(
           const bankBal = accountMap.get(effectiveAccountId)!;
           accountMap.set(effectiveAccountId, safeSubtract(bankBal, amount));
         }
+        if (tx.investmentId && investmentMap.has(tx.investmentId)) {
+          const current = investmentMap.get(tx.investmentId)!;
+          investmentMap.set(tx.investmentId, {
+            invested: safeAdd(current.invested, amount),
+            current: safeAdd(current.current, amount),
+          });
+        }
         break;
 
       case 'INVESTMENT_WITHDRAWAL':
@@ -239,6 +258,13 @@ export function recalculateAllBalances(
         } else if (effectiveAccountId && accountMap.has(effectiveAccountId)) {
           const bankBal = accountMap.get(effectiveAccountId)!;
           accountMap.set(effectiveAccountId, safeAdd(bankBal, amount));
+        }
+        if (tx.investmentId && investmentMap.has(tx.investmentId)) {
+          const current = investmentMap.get(tx.investmentId)!;
+          investmentMap.set(tx.investmentId, {
+            invested: safeSubtract(current.invested, amount),
+            current: safeSubtract(current.current, amount),
+          });
         }
         break;
 
@@ -356,12 +382,50 @@ export function recalculateAllBalances(
     outstandingPrincipal: loanPrincipalMap.get(loan.id) ?? loan.principalAmount,
   }));
 
+  const updatedInvestments = initialInvestments.map(inv => {
+    const data = investmentMap.get(inv.id);
+    return data ? { ...inv, investedAmount: data.invested, currentValue: Math.max(data.current, inv.currentValue) } : inv;
+  });
+
+  // Dynamically compute remaining balance and settlement status for debts from active transactions
+  const updatedDebts = initialDebts.map(debt => {
+    const targetType = debt.type === 'LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+    const totalRepayments = activeTx
+      .filter(t => t.type === targetType && (t.debtId ? t.debtId === debt.id : (t.debtPersonName && t.debtPersonName.toLowerCase().trim() === debt.personName.toLowerCase().trim())))
+      .reduce((sum, t) => safeAdd(sum, Math.abs(Number(t.amount) || 0)), 0);
+
+    const calculatedRemaining = Math.max(0, safeSubtract(debt.amount, totalRepayments));
+
+    let isNowSettled: boolean;
+    let finalRemaining: number;
+
+    if (totalRepayments > 0) {
+      finalRemaining = calculatedRemaining;
+      isNowSettled = debt.amount > 0 ? calculatedRemaining <= 0 : !!debt.isSettled;
+    } else {
+      // No active repayment transactions exist
+      if (debt.isSettled) {
+        isNowSettled = true;
+        finalRemaining = 0;
+      } else {
+        isNowSettled = false;
+        finalRemaining = debt.remainingAmount !== undefined ? Math.min(debt.amount, debt.remainingAmount) : debt.amount;
+      }
+    }
+
+    return {
+      ...debt,
+      remainingAmount: finalRemaining,
+      isSettled: isNowSettled,
+    };
+  });
+
   return {
     accounts: updatedAccounts,
     cards: updatedCards,
-    investments: initialInvestments,
+    investments: updatedInvestments,
     loans: updatedLoans,
-    debts: initialDebts,
+    debts: updatedDebts,
   };
 }
 
@@ -390,13 +454,13 @@ export function computeFinancialSummary(
     .filter(a => !a.isDeleted && a.isActive && !a.isExcludedFromNetWorth && a.type !== 'LOAN' && a.type !== 'CREDIT_CARD')
     .reduce((sum, a) => safeAdd(sum, a.calculatedBalance), 0);
 
-  const totalInvestments = investments.reduce((sum, inv) => safeAdd(sum, inv.currentValue || inv.investedAmount), 0);
-  const totalInvestedCost = investments.reduce((sum, inv) => safeAdd(sum, inv.investedAmount), 0);
+  const totalInvestments = investments.filter(i => !i.isDeleted).reduce((sum, inv) => safeAdd(sum, inv.currentValue || inv.investedAmount), 0);
+  const totalInvestedCost = investments.filter(i => !i.isDeleted).reduce((sum, inv) => safeAdd(sum, inv.investedAmount), 0);
   const investmentGainLoss = safeSubtract(totalInvestments, totalInvestedCost);
 
   const totalReceivables = debts
-    .filter(d => d.type === 'LENT' && !d.isSettled)
-    .reduce((sum, d) => safeAdd(sum, d.remainingAmount), 0);
+    .filter(d => !d.isDeleted && d.type === 'LENT' && !d.isSettled && (d.remainingAmount === undefined || d.remainingAmount > 0))
+    .reduce((sum, d) => safeAdd(sum, d.remainingAmount !== undefined ? d.remainingAmount : d.amount), 0);
 
   const totalAssets = safeAdd(safeAdd(totalBankAndDeposits, totalInvestments), totalReceivables);
 
@@ -405,11 +469,11 @@ export function computeFinancialSummary(
   const creditTotalOutstanding = cards.filter(c => !c.isDeleted && c.isActive).reduce((sum, c) => safeAdd(sum, c.currentOutstanding), 0);
   const creditUtilizationPercent = creditTotalLimit > 0 ? Math.min(100, (creditTotalOutstanding / creditTotalLimit) * 100) : 0;
 
-  const totalLoansOutstanding = loans.reduce((sum, l) => safeAdd(sum, l.outstandingPrincipal), 0);
+  const totalLoansOutstanding = loans.filter(l => !l.isDeleted).reduce((sum, l) => safeAdd(sum, l.outstandingPrincipal), 0);
 
   const totalPayables = debts
-    .filter(d => d.type === 'BORROWED' && !d.isSettled)
-    .reduce((sum, d) => safeAdd(sum, d.remainingAmount), 0);
+    .filter(d => !d.isDeleted && d.type === 'BORROWED' && !d.isSettled && (d.remainingAmount === undefined || d.remainingAmount > 0))
+    .reduce((sum, d) => safeAdd(sum, d.remainingAmount !== undefined ? d.remainingAmount : d.amount), 0);
 
   const totalLiabilities = safeAdd(safeAdd(creditTotalOutstanding, totalLoansOutstanding), totalPayables);
   const netWorth = safeSubtract(totalAssets, totalLiabilities);
@@ -601,36 +665,90 @@ export function learnMerchantSuggestion(
     };
   }
 
-  // Find most frequent combination in recent transactions
-  const matched = transactions
-    .filter(t => !t.isDeleted && t.merchantName?.toLowerCase() === cleanName)
-    .sort((a, b) => {
-      const dateA = a.date || '';
-      const dateB = b.date || '';
-      const dateCompare = dateB.localeCompare(dateA);
-      if (dateCompare !== 0) return dateCompare;
-
-      const timeA = a.time || '00:00';
-      const timeB = b.time || '00:00';
-      const timeCompare = timeB.localeCompare(timeA);
-      if (timeCompare !== 0) return timeCompare;
-
-      const tsA = a.timestamp || 0;
-      const tsB = b.timestamp || 0;
-      if (tsA && tsB && tsA !== tsB) return tsB - tsA;
-      
-      return 0;
-    });
-
-  if (matched.length > 0) {
-    const latest = matched[0];
-    return {
-      categoryId: latest.categoryId,
-      accountId: latest.accountId,
-      creditCardId: latest.creditCardId,
-      paymentAppId: latest.paymentAppId,
-    };
+  // Linear scan from most recent transactions without allocating / sorting arrays
+  for (let i = transactions.length - 1; i >= 0; i--) {
+    const t = transactions[i];
+    if (!t.isDeleted && t.merchantName && t.merchantName.toLowerCase() === cleanName) {
+      return {
+        categoryId: t.categoryId,
+        accountId: t.accountId,
+        creditCardId: t.creditCardId,
+        paymentAppId: t.paymentAppId,
+      };
+    }
   }
 
   return {};
+}
+
+/**
+ * Automatically generates a descriptive transaction note / narration for debt operations
+ * including installment counts (e.g., "Part payment received from Rahul - 1", "Final Settlement from Rahul").
+ */
+export function generateDebtTransactionNarration(options: {
+  type: 'MONEY_LENT' | 'MONEY_BORROWED' | 'MONEY_LENT_REPAYMENT' | 'MONEY_BORROWED_REPAYMENT' | string;
+  personName: string;
+  amount: number;
+  remainingBeforePayment?: number;
+  totalDebtAmount?: number;
+  existingTransactions?: Transaction[]; // For backward compatibility if used elsewhere
+  debtId?: string;
+  isSettledDirectly?: boolean;
+  installmentCount?: number;
+}): string {
+  const person = (options.personName || '').trim() || 'Person';
+  if (options.type === 'MONEY_LENT') {
+    return `Lent money to ${person}`;
+  }
+  if (options.type === 'MONEY_BORROWED') {
+    return `Borrowed money from ${person}`;
+  }
+
+  const isLentReturn = options.type === 'MONEY_LENT_REPAYMENT';
+  const targetType = isLentReturn ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+
+  // Use provided installment count or compute it
+  let priorCount = options.installmentCount || 0;
+  
+  if (options.installmentCount === undefined && options.existingTransactions) {
+    for (let i = 0; i < options.existingTransactions.length; i++) {
+      const t = options.existingTransactions[i];
+      if (
+        !t.isDeleted &&
+        t.type === targetType &&
+        (t.debtId === options.debtId ||
+          (t.debtPersonName && t.debtPersonName.toLowerCase().trim() === person.toLowerCase().trim()))
+      ) {
+        priorCount++;
+      }
+    }
+  }
+
+  const installmentNumber = priorCount + 1;
+
+  // Determine if this payment completes the settlement
+  const rem = options.remainingBeforePayment !== undefined
+    ? options.remainingBeforePayment
+    : (options.totalDebtAmount !== undefined ? options.totalDebtAmount : options.amount);
+  
+  const willSettle = options.isSettledDirectly || (rem > 0 && options.amount >= rem);
+
+  if (isLentReturn) {
+    if (willSettle) {
+      if (installmentNumber > 1) {
+        return `Final Settlement from ${person} - ${installmentNumber}`;
+      }
+      return `Final Settlement from ${person}`;
+    }
+    return `Part payment received from ${person} - ${installmentNumber}`;
+  } else {
+    // MONEY_BORROWED_REPAYMENT
+    if (willSettle) {
+      if (installmentNumber > 1) {
+        return `Final Settlement to ${person} - ${installmentNumber}`;
+      }
+      return `Final Settlement to ${person}`;
+    }
+    return `Part payment made to ${person} - ${installmentNumber}`;
+  }
 }

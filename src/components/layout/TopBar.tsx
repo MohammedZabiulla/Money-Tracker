@@ -159,8 +159,8 @@ export const TopBar: React.FC<TopBarProps> = ({ currentTab }) => {
         {/* Center: Current Date & Time */}
         <div className="flex items-center space-x-1 sm:space-x-1.5 px-2.5 sm:px-3 py-1 bg-emerald-50/80 dark:bg-slate-800/80 border border-emerald-200/80 dark:border-slate-700/80 rounded-full text-xs font-bold text-slate-800 dark:text-slate-200 shadow-xs shrink-0">
           <Clock size={13} className="text-emerald-500 shrink-0 animate-pulse" />
-          <span className="hidden sm:inline tracking-tight text-[11px] sm:text-xs font-mono">{formattedDate} • {formattedTime}</span>
-          <span className="sm:hidden tracking-tight text-[10.5px] font-mono">{shortDate} • {formattedTime}</span>
+          <span className="hidden sm:inline tracking-wide text-[11px] sm:text-xs font-bold font-sans">{formattedDate} • {formattedTime}</span>
+          <span className="sm:hidden tracking-wide text-[10.5px] font-bold font-sans">{shortDate} • {formattedTime}</span>
         </div>
 
         {/* Right Actions */}

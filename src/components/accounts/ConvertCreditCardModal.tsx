@@ -1,3 +1,4 @@
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CreditCard, AccountType } from '../../types';
 import { useMoney } from '../../context/MoneyContext';
@@ -27,6 +28,8 @@ export const ConvertCreditCardModal: React.FC<ConvertCreditCardModalProps> = ({
   onClose,
   targetCard,
 }) => {
+  useScrollLock(isOpen);
+
   const { creditCards, transactions, convertCreditCardToAccount } = useMoney();
 
   const activeCards = useMemo(() => {

@@ -18,6 +18,7 @@ import { RotateCcw, X, Plus, Search } from 'lucide-react';
 import { motion } from 'motion/react';
 
 function MainApp() {
+  console.log("MainApp rendered!");
   const { isLocked, undoToast, dismissUndoToast, settings } = useMoney();
   const [currentTab, setCurrentTab] = useState<'home' | 'insights' | 'accounts' | 'more' | 'transactions'>('home');
   const [filterAccountId, setFilterAccountId] = useState<string>('ALL');
@@ -47,22 +48,44 @@ function MainApp() {
     return <LockScreen />;
   }
 
-  const handleOpenAdd = (type: TransactionType = 'EXPENSE', accountId?: string) => {
-    setInitialAddType(type);
-    setInitialAccountIdForAdd(accountId);
+  
+  const handleOpenAdd = React.useCallback((type: any = 'EXPENSE', accountId?: any) => {
+    const validTypes = new Set([
+      'EXPENSE', 'INCOME', 'TRANSFER', 'CARD_PAYMENT',
+      'INVESTMENT_CONTRIBUTION', 'INVESTMENT_WITHDRAWAL',
+      'LOAN_DISBURSEMENT', 'LOAN_REPAYMENT',
+      'MONEY_LENT', 'MONEY_BORROWED', 'MONEY_LENT_REPAYMENT', 'MONEY_BORROWED_REPAYMENT',
+      'REFUND', 'ADJUSTMENT'
+    ]);
+    const safeType: TransactionType = typeof type === 'string' && validTypes.has(type)
+      ? (type as TransactionType)
+      : 'EXPENSE';
+    const safeAccountId = typeof accountId === 'string' ? accountId : undefined;
+    setInitialAddType(safeType);
+    setInitialAccountIdForAdd(safeAccountId);
     setShowAddModal(true);
-  };
+  }, []);
 
-  const handleNavigateToAccountTransactions = (accountId: string) => {
+  const handleNavigateToAccountTransactions = React.useCallback((accountId: string) => {
     setFilterAccountId(accountId);
     setCurrentTab('transactions');
-  };
+  }, []);
 
-  const handleOpenSearch = () => {
+  const handleOpenSearch = React.useCallback(() => {
     setFilterAccountId('ALL');
     setAutoFocusSearch(true);
     setCurrentTab('transactions');
-  };
+  }, []);
+
+  const handleViewAllTransactions = React.useCallback(() => {
+    setFilterAccountId('ALL');
+    setCurrentTab('transactions');
+  }, []);
+
+  const handleNavigateTab = React.useCallback((tab: any) => setCurrentTab(tab), []);
+
+  const handleResetSearchFocus = React.useCallback(() => setAutoFocusSearch(false), []);
+
 
   return (
     <div className="min-h-screen bg-slate-100/60 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
@@ -75,12 +98,9 @@ function MainApp() {
           <HomeDashboard
             onOpenAdd={handleOpenAdd}
             onSelectTransaction={setSelectedTransaction}
-            onViewAllTransactions={() => {
-              setFilterAccountId('ALL');
-              setCurrentTab('transactions');
-            }}
+            onViewAllTransactions={handleViewAllTransactions}
             onNavigateToAccountTransactions={handleNavigateToAccountTransactions}
-            onNavigateTab={tab => setCurrentTab(tab as any)}
+            onNavigateTab={handleNavigateTab}
           />
         )}
 
@@ -89,12 +109,9 @@ function MainApp() {
             initialSubtab="insights"
             onOpenAdd={handleOpenAdd}
             onSelectTransaction={setSelectedTransaction}
-            onViewAllTransactions={() => {
-              setFilterAccountId('ALL');
-              setCurrentTab('transactions');
-            }}
+            onViewAllTransactions={handleViewAllTransactions}
             onNavigateToAccountTransactions={handleNavigateToAccountTransactions}
-            onNavigateTab={tab => setCurrentTab(tab as any)}
+            onNavigateTab={handleNavigateTab}
           />
         )}
 
@@ -103,10 +120,10 @@ function MainApp() {
             key={filterAccountId}
             initialAccountId={filterAccountId}
             onSelectTransaction={setSelectedTransaction}
-            onOpenAdd={() => handleOpenAdd()}
-            onEditTransaction={tx => setEditingTransaction(tx)}
+            onOpenAdd={handleOpenAdd}
+            onEditTransaction={setEditingTransaction}
             autoFocusSearch={autoFocusSearch}
-            onResetSearchFocus={() => setAutoFocusSearch(false)}
+            onResetSearchFocus={handleResetSearchFocus}
           />
         )}
 
@@ -115,7 +132,7 @@ function MainApp() {
             onSelectTransaction={setSelectedTransaction}
             onOpenAdd={handleOpenAdd}
             onNavigateToFullFeed={handleNavigateToAccountTransactions}
-            onEditTransaction={tx => setEditingTransaction(tx)}
+            onEditTransaction={setEditingTransaction}
           />
         )}
 
@@ -162,38 +179,46 @@ function MainApp() {
       />
 
       {/* Add Transaction Modal */}
-      <AddTransactionModal
-        isOpen={showAddModal}
-        onClose={() => {
-          setShowAddModal(false);
-          setInitialAccountIdForAdd(undefined);
-        }}
-        initialType={initialAddType}
-        initialAccountId={initialAccountIdForAdd}
-      />
+      {showAddModal && (
+        <AddTransactionModal
+          isOpen={showAddModal}
+          onClose={() => {
+            setShowAddModal(false);
+            setInitialAccountIdForAdd(undefined);
+          }}
+          initialType={initialAddType}
+          initialAccountId={initialAccountIdForAdd}
+        />
+      )}
 
       {/* Edit Transaction Modal */}
-      <EditTransactionModal
-        isOpen={!!editingTransaction}
-        transaction={editingTransaction}
-        onClose={() => setEditingTransaction(null)}
-      />
+      {!!editingTransaction && (
+        <EditTransactionModal
+          isOpen={!!editingTransaction}
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+        />
+      )}
 
       {/* Transaction Detail Modal */}
-      <TransactionDetailModal
-        transaction={selectedTransaction}
-        onClose={() => setSelectedTransaction(null)}
-        onEdit={tx => {
-          setSelectedTransaction(null);
-          setEditingTransaction(tx);
-        }}
-      />
+      {!!selectedTransaction && (
+        <TransactionDetailModal
+          transaction={selectedTransaction}
+          onClose={() => setSelectedTransaction(null)}
+          onEdit={tx => {
+            setSelectedTransaction(null);
+            setEditingTransaction(tx);
+          }}
+        />
+      )}
 
       {/* Trash / Recycle Bin Modal */}
-      <TrashModal
-        isOpen={showTrashModal}
-        onClose={() => setShowTrashModal(false)}
-      />
+      {showTrashModal && (
+        <TrashModal
+          isOpen={showTrashModal}
+          onClose={() => setShowTrashModal(false)}
+        />
+      )}
 
       {/* Undo Toast Banner */}
       {undoToast && (

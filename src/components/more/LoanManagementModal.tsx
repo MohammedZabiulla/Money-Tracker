@@ -3,7 +3,11 @@ import { useMoney } from '../../context/MoneyContext';
 import { formatINR } from '../../lib/currency';
 import { Emblem3D } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
+import { ThemeColorPicker } from '../../lib/colorPalettes';
 import { X, Plus, Trash2, Landmark, AlertCircle } from 'lucide-react';
+import { useScrollLock } from '../../hooks/useScrollLock';
+import { Loan } from '../../types';
+import { ConfirmDeleteModal } from '../common/ConfirmDeleteModal';
 
 interface LoanManagementModalProps {
   isOpen: boolean;
@@ -14,6 +18,8 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  useScrollLock(isOpen);
+
   const { loans, accounts, addLoan, payLoanEMI, deleteLoan } = useMoney();
   const activeLoans = loans.filter(l => !l.isDeleted);
 
@@ -23,10 +29,12 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
   const [interestRate, setInterestRate] = useState('9.5');
   const [tenureMonths, setTenureMonths] = useState('36');
   const [emiAmount, setEmiAmount] = useState('16000');
+  const [color, setColor] = useState('#B45309');
   const [error, setError] = useState<string | null>(null);
 
   // EMI Payment Dialog State
   const [payingLoanId, setPayingLoanId] = useState<string | null>(null);
+  const [deleteConfirmLoan, setDeleteConfirmLoan] = useState<Loan | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState(accounts[0]?.id || '');
   const [payAmount, setPayAmount] = useState('');
   const [payPrincipal, setPayPrincipal] = useState('');
@@ -57,6 +65,7 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
       emiAmount: emi,
       startDate: new Date().toISOString().substring(0, 10),
       nextPaymentDate: new Date().toISOString().substring(0, 10),
+      color: color || '#B45309',
     });
 
     setName('');
@@ -201,6 +210,12 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
             </div>
           </div>
 
+          <ThemeColorPicker
+            value={color}
+            onChange={setColor}
+            label="Theme Accent & Color"
+          />
+
           <button
             type="submit"
             className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-md shadow-amber-600/20 flex items-center justify-center space-x-1.5 active:scale-98 transition-all"
@@ -264,7 +279,7 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
                     </button>
                     {deleteLoan && (
                       <button
-                        onClick={() => deleteLoan(l.id)}
+                        onClick={() => setDeleteConfirmLoan(l)}
                         className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
                         title="Delete Loan"
                       >
@@ -351,6 +366,30 @@ export const LoanManagementModal: React.FC<LoanManagementModalProps> = ({
             </div>
           </div>
         )}
+        {/* Delete Confirmation Modal */}
+        <ConfirmDeleteModal
+          isOpen={Boolean(deleteConfirmLoan)}
+          onClose={() => setDeleteConfirmLoan(null)}
+          onConfirm={() => {
+            if (deleteConfirmLoan && deleteLoan) {
+              deleteLoan(deleteConfirmLoan.id);
+              setDeleteConfirmLoan(null);
+            }
+          }}
+          title="Delete Loan / EMI Record?"
+          description="Are you sure you want to delete this loan record? You can restore it anytime from More → Trash Bin."
+          itemDetails={
+            deleteConfirmLoan
+              ? {
+                  title: deleteConfirmLoan.name,
+                  amount: `EMI: ${formatINR(deleteConfirmLoan.emiAmount)}/mo`,
+                  subtitle: `${deleteConfirmLoan.lenderName} • Balance: ${formatINR(deleteConfirmLoan.outstandingPrincipal)}`,
+                  badge: deleteConfirmLoan.type.replace(/_/g, ' '),
+                }
+              : undefined
+          }
+          confirmLabel="Delete Loan"
+        />
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { formatINR } from '../../lib/currency';
@@ -31,6 +32,8 @@ interface TrashModalProps {
 type TrashTab = 'ALL' | 'TRANSACTIONS' | 'ACCOUNTS' | 'CARDS' | 'BUDGETS' | 'SUBSCRIPTIONS' | 'RECURRING' | 'GOALS' | 'LOANS' | 'INVESTMENTS' | 'DEBTS';
 
 export const TrashModal: React.FC<TrashModalProps> = ({ isOpen, onClose }) => {
+  useScrollLock(isOpen);
+
   const {
     deletedTransactions,
     deletedAccounts,
@@ -79,9 +82,9 @@ export const TrashModal: React.FC<TrashModalProps> = ({ isOpen, onClose }) => {
     <div className="fixed inset-0 z-[200] bg-slate-950/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6">
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-850/50">
+        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-850/50 shrink-0">
           <div className="flex items-center space-x-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold">
+            <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold shrink-0">
               <Trash2 size={20} />
             </div>
             <div>
@@ -108,7 +111,7 @@ export const TrashModal: React.FC<TrashModalProps> = ({ isOpen, onClose }) => {
 
         {/* Action Top Bar */}
         {trashCount > 0 && (
-          <div className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between text-xs">
+          <div className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between text-xs shrink-0">
             <div className="flex space-x-2">
               <button
                 onClick={() => restoreAllTrash()}
@@ -151,7 +154,7 @@ export const TrashModal: React.FC<TrashModalProps> = ({ isOpen, onClose }) => {
         )}
 
         {/* Tab Switcher */}
-        <div className="px-4 pt-3 pb-2 border-b border-slate-100 dark:border-slate-800 flex space-x-1.5 overflow-x-auto no-scrollbar text-xs">
+        <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex space-x-1.5 overflow-x-auto no-scrollbar text-xs shrink-0 bg-white dark:bg-slate-900 z-10 relative">
           <button
             onClick={() => setActiveTab('ALL')}
             className={`px-3 py-1.5 rounded-full font-semibold shrink-0 transition-all ${
@@ -265,7 +268,7 @@ export const TrashModal: React.FC<TrashModalProps> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Content Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1">
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1 min-h-0">
           {trashCount === 0 ? (
             <div className="py-16 text-center text-slate-400 dark:text-slate-500">
               <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center mb-3">
@@ -325,11 +328,12 @@ export const TrashModal: React.FC<TrashModalProps> = ({ isOpen, onClose }) => {
                               {/* Type Badge */}
                               <span className={`text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${
                                 isIncome ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' :
+                                tx.type === 'INVESTMENT_CONTRIBUTION' ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-400' :
                                 isTransfer ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400' :
                                 tx.type === 'CARD_PAYMENT' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400' :
                                 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400'
                               }`}>
-                                {tx.type === 'CARD_PAYMENT' ? 'Card Bill' : tx.type === 'MONEY_BORROWED' ? 'Borrowed' : tx.type === 'MONEY_LENT' ? 'Lent' : isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense'}
+                                {tx.type === 'CARD_PAYMENT' ? 'Card Bill' : tx.type === 'MONEY_BORROWED' ? 'Borrowed' : tx.type === 'MONEY_LENT' ? 'Lent' : tx.type === 'INVESTMENT_CONTRIBUTION' ? 'Invest' : isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense'}
                               </span>
 
                               <span className="font-semibold text-slate-700 dark:text-slate-300">

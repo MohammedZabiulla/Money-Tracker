@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Clock,
@@ -28,13 +29,13 @@ export interface CustomTimePickerProps {
 const QUICK_PRESETS = [
   { label: 'Now', getVal: () => {
     const d = new Date();
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
   }, icon: Sparkles },
-  { label: '9:00 AM', value: '09:00', icon: Sunrise },
-  { label: '1:00 PM', value: '13:00', icon: Sun },
-  { label: '4:30 PM', value: '16:30', icon: Sunset },
-  { label: '8:00 PM', value: '20:00', icon: Moon },
-  { label: '10:30 PM', value: '22:30', icon: Moon },
+  { label: '9:00 AM', value: '09:00:00', icon: Sunrise },
+  { label: '1:00 PM', value: '13:00:00', icon: Sun },
+  { label: '4:30 PM', value: '16:30:00', icon: Sunset },
+  { label: '8:00 PM', value: '20:00:00', icon: Moon },
+  { label: '10:30 PM', value: '22:30:00', icon: Moon },
 ];
 
 export const CustomTimePicker: React.FC<CustomTimePickerProps> = ({
@@ -49,32 +50,44 @@ export const CustomTimePicker: React.FC<CustomTimePickerProps> = ({
   align = 'left',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  useScrollLock(isOpen);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Parse 24-hr time into 12-hr parts
+  // Parse 24-hr time into 12-hr parts (including seconds)
   const parsedTime = useMemo(() => {
-    const defaultTime = '12:00';
+    const defaultTime = '12:00:00';
     const effective = value && value.includes(':') ? value : defaultTime;
-    const [hStr, mStr] = effective.split(':');
+    const [hStr, mStr, sStr] = effective.split(':');
     const h24 = parseInt(hStr, 10) || 0;
     const m = parseInt(mStr, 10) || 0;
+    const s = sStr !== undefined && !isNaN(parseInt(sStr, 10)) ? parseInt(sStr, 10) : undefined;
 
     const period: 'AM' | 'PM' = h24 >= 12 ? 'PM' : 'AM';
     let h12 = h24 % 12;
     if (h12 === 0) h12 = 12;
 
+    const formatted24 = s !== undefined
+      ? `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+      : `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+    const formatted12 = s !== undefined
+      ? `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')} ${period}`
+      : `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
+
     return {
       h24,
       h12,
       m,
+      s,
       period,
-      formatted24: `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
-      formatted12: `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`,
+      formatted24,
+      formatted12,
     };
   }, [value]);
 
   const [selectedHour, setSelectedHour] = useState<number>(parsedTime.h12);
   const [selectedMinute, setSelectedMinute] = useState<number>(parsedTime.m);
+  const [selectedSecond, setSelectedSecond] = useState<number>(parsedTime.s ?? 0);
   const [selectedPeriod, setSelectedPeriod] = useState<'AM' | 'PM'>(parsedTime.period);
   const [activeTab, setActiveTab] = useState<'HOURS' | 'MINUTES'>('HOURS');
 
@@ -82,6 +95,7 @@ export const CustomTimePicker: React.FC<CustomTimePickerProps> = ({
   useEffect(() => {
     setSelectedHour(parsedTime.h12);
     setSelectedMinute(parsedTime.m);
+    setSelectedSecond(parsedTime.s ?? 0);
     setSelectedPeriod(parsedTime.period);
   }, [parsedTime, isOpen]);
 
@@ -102,39 +116,41 @@ export const CustomTimePicker: React.FC<CustomTimePickerProps> = ({
   }, [isOpen]);
 
   // Convert 12-hr parts to 24-hr string and fire onChange
-  const commitTime = (h12: number, min: number, period: 'AM' | 'PM') => {
+  const commitTime = (h12: number, min: number, sec: number, period: 'AM' | 'PM') => {
     let h24 = h12 % 12;
     if (period === 'PM') h24 += 12;
-    const timeStr = `${String(h24).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    const timeStr = `${String(h24).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
     onChange(timeStr);
   };
 
   const handleHourSelect = (h: number) => {
     setSelectedHour(h);
-    commitTime(h, selectedMinute, selectedPeriod);
+    commitTime(h, selectedMinute, selectedSecond, selectedPeriod);
     setActiveTab('MINUTES');
   };
 
   const handleMinuteSelect = (m: number) => {
     setSelectedMinute(m);
-    commitTime(selectedHour, m, selectedPeriod);
+    commitTime(selectedHour, m, selectedSecond, selectedPeriod);
   };
 
   const handlePeriodToggle = (p: 'AM' | 'PM') => {
     setSelectedPeriod(p);
-    commitTime(selectedHour, selectedMinute, p);
+    commitTime(selectedHour, selectedMinute, selectedSecond, p);
   };
 
   const handlePresetSelect = (val: string) => {
     onChange(val);
-    const [hStr, mStr] = val.split(':');
+    const [hStr, mStr, sStr] = val.split(':');
     const h24 = parseInt(hStr, 10) || 0;
     const m = parseInt(mStr, 10) || 0;
+    const s = sStr !== undefined ? parseInt(sStr, 10) : 0;
     const p: 'AM' | 'PM' = h24 >= 12 ? 'PM' : 'AM';
     let h12 = h24 % 12;
     if (h12 === 0) h12 = 12;
     setSelectedHour(h12);
     setSelectedMinute(m);
+    setSelectedSecond(s);
     setSelectedPeriod(p);
     setIsOpen(false);
   };
@@ -163,7 +179,7 @@ export const CustomTimePicker: React.FC<CustomTimePickerProps> = ({
     setSelectedMinute(newM);
     setSelectedHour(newH);
     setSelectedPeriod(newP);
-    commitTime(newH, newM, newP);
+    commitTime(newH, newM, selectedSecond, newP);
   };
 
   const sizeClasses = {
@@ -252,6 +268,18 @@ export const CustomTimePicker: React.FC<CustomTimePickerProps> = ({
                 >
                   {String(selectedMinute).padStart(2, '0')}
                 </button>
+
+                {parsedTime.s !== undefined && (
+                  <>
+                    <span className="text-xl font-black text-slate-400 dark:text-slate-500">:</span>
+                    <div
+                      className="px-2 py-1.5 rounded-xl font-mono text-sm font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center"
+                      title="Seconds (captured live)"
+                    >
+                      {String(selectedSecond).padStart(2, '0')}s
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* AM / PM Segmented Control */}

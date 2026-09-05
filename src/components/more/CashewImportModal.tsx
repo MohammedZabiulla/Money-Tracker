@@ -1,3 +1,4 @@
+import { useScrollLock } from "../../hooks/useScrollLock";
 import React, { useState, useRef, ChangeEvent, DragEvent, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import {
@@ -59,6 +60,8 @@ interface CashewImportModalProps {
 }
 
 export const CashewImportModal: React.FC<CashewImportModalProps> = ({ isOpen, onClose }) => {
+  useScrollLock(isOpen);
+
   const context = useMoney();
   const fileInputRef = useRef<HTMLInputElement>(null);
 

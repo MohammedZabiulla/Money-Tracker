@@ -157,14 +157,16 @@ export function processAllDueRecurring(
 
       if (!alreadyExists) {
         const txId = 'tx_rec_' + rule.id + '_' + nextDue.replace(/-/g, '') + '_' + Math.random().toString(36).substring(2, 6);
-        const time = '09:00';
+        const now = new Date();
+        const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         const dateParts = nextDue.split('-');
         const timestamp = new Date(
           Number(dateParts[0]),
           Number(dateParts[1]) - 1,
           Number(dateParts[2]),
-          9,
-          0
+          now.getHours(),
+          now.getMinutes(),
+          now.getSeconds()
         ).getTime() || Date.now();
 
         const newTx: Transaction = {
@@ -188,6 +190,7 @@ export function processAllDueRecurring(
           paymentAppName: rule.paymentAppName,
           recurringId: rule.id,
           recurringName: rule.name,
+          goalId: rule.goalId,
           isAutoRecorded: true,
           notes: rule.notes ? `${rule.notes} (Recurring: ${rule.name})` : `Auto-recorded recurring: ${rule.name}`,
           tags: Array.from(new Set([...(rule.tags || []), '#recurring', '#autorecord'])),
@@ -246,14 +249,16 @@ export function processAllDueRecurring(
 
       if (!alreadyExists) {
         const txId = 'tx_sub_' + sub.id + '_' + nextBill.replace(/-/g, '') + '_' + Math.random().toString(36).substring(2, 6);
-        const time = '10:00';
+        const now = new Date();
+        const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         const dateParts = nextBill.split('-');
         const timestamp = new Date(
           Number(dateParts[0]),
           Number(dateParts[1]) - 1,
           Number(dateParts[2]),
-          10,
-          0
+          now.getHours(),
+          now.getMinutes(),
+          now.getSeconds()
         ).getTime() || Date.now();
 
         const newTx: Transaction = {
@@ -274,6 +279,7 @@ export function processAllDueRecurring(
           paymentAppName: sub.paymentAppName,
           recurringId: sub.id,
           recurringName: sub.name,
+          goalId: sub.goalId,
           isAutoRecorded: true,
           notes: sub.notes ? `${sub.notes} (Subscription: ${sub.name})` : `Auto-recorded subscription: ${sub.name}`,
           tags: ['#subscription', '#recurring', '#autorecord'],

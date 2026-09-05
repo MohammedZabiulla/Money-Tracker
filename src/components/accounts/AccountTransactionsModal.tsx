@@ -32,6 +32,7 @@ import {
   Paperclip,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useScrollLock } from '../../hooks/useScrollLock';
 
 
 function isTransactionInflow(t: Transaction, targetId: string) {
@@ -71,6 +72,8 @@ export const AccountTransactionsModal: React.FC<AccountTransactionsModalProps> =
   onNavigateToFullFeed,
   onEditTransaction,
 }) => {
+  useScrollLock(isOpen);
+
   const { transactions, categories, activeMonth, deleteTransaction, accounts, creditCards } = useMoney();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -166,19 +169,21 @@ export const AccountTransactionsModal: React.FC<AccountTransactionsModalProps> =
       return true;
     }).sort((a, b) => {
       // Primary: sort by date descending (newest first)
-      const dateCompare = b.date.localeCompare(a.date);
+      const dateCompare = (b.date || '').localeCompare(a.date || '');
       if (dateCompare !== 0) return dateCompare;
 
       // Secondary: sort by time descending (newest first)
-      const timeA = a.time || '00:00';
-      const timeB = b.time || '00:00';
+      const timeA = a.time || '00:00:00';
+      const timeB = b.time || '00:00:00';
       const timeCompare = timeB.localeCompare(timeA);
       if (timeCompare !== 0) return timeCompare;
 
-      // Tertiary: sort by timestamp descending (newest first)
-      const tsA = a.timestamp || 0;
-      const tsB = b.timestamp || 0;
-      return tsB - tsA;
+      // Tertiary: sort by timestamp / createdAt descending (newest first)
+      const tsA = a.timestamp || a.createdAt || 0;
+      const tsB = b.timestamp || b.createdAt || 0;
+      if (tsB !== tsA) return tsB - tsA;
+
+      return (b.id || '').localeCompare(a.id || '');
     });
   }, [transactions, targetId, timeFilter, typeFilter, searchQuery, activeMonth]);
 
@@ -279,7 +284,7 @@ export const AccountTransactionsModal: React.FC<AccountTransactionsModalProps> =
                       {account
                         ? account.accountNumberLast4
                           ? `A/C ••${account.accountNumberLast4}`
-                          : account.type.replace('_', ' ')
+                          : (typeof account.type === 'string' ? account.type.replace('_', ' ') : 'Account')
                         : `Card ••${card?.lastFourDigits}`}
                     </span>
                   </p>
@@ -457,21 +462,16 @@ export const AccountTransactionsModal: React.FC<AccountTransactionsModalProps> =
             ) : (
               dates.map((dateStr, dIdx) => {
                 const dayTxs = [...(groupedByDate[dateStr] || [])].sort((a, b) => {
-                  const dateA = a.date || '';
-                  const dateB = b.date || '';
-                  const dateCompare = dateA.localeCompare(dateB);
-                  if (dateCompare !== 0) return dateCompare;
-
-                  const timeA = a.time || '00:00';
-                  const timeB = b.time || '00:00';
+                  const timeA = a.time || '00:00:00';
+                  const timeB = b.time || '00:00:00';
                   const timeCompare = timeB.localeCompare(timeA);
                   if (timeCompare !== 0) return timeCompare;
 
-                  const tsA = a.timestamp || 0;
-                  const tsB = b.timestamp || 0;
+                  const tsA = a.timestamp || a.createdAt || 0;
+                  const tsB = b.timestamp || b.createdAt || 0;
                   if (tsA && tsB && tsA !== tsB) return tsB - tsA;
 
-                  return 0;
+                  return (b.id || '').localeCompare(a.id || '');
                 });
                 const dayTotal = dayTxs.reduce((sum, tx) => {
                   if (isTransactionInflow(tx, targetId)) {
@@ -731,7 +731,7 @@ export const AccountTransactionsModal: React.FC<AccountTransactionsModalProps> =
             ? {
                 title: deleteConfirmTx.merchantName || deleteConfirmTx.categoryName || deleteConfirmTx.notes || 'Transaction',
                 amount: `${isTransactionInflow(deleteConfirmTx, targetId) ? '+' : '-'}${formatINR(deleteConfirmTx.amount)}`,
-                subtitle: `${deleteConfirmTx.date} • ${deleteConfirmTx.type.replace(/_/g, ' ')}`,
+                subtitle: `${deleteConfirmTx.date} • ${(typeof deleteConfirmTx.type === 'string' ? deleteConfirmTx.type : 'EXPENSE').replace(/_/g, ' ')}`,
                 badge: deleteConfirmTx.categoryName || 'General',
               }
             : undefined

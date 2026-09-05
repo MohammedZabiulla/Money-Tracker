@@ -1,3 +1,4 @@
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState, useEffect } from 'react';
 import { CreditCard } from '../../types';
 import { formatINR } from '../../lib/currency';
@@ -28,6 +29,8 @@ export const ArrangeCardsModal: React.FC<ArrangeCardsModalProps> = ({
   cards,
   onSaveOrder,
 }) => {
+  useScrollLock(isOpen);
+
   const [items, setItems] = useState<CreditCard[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);

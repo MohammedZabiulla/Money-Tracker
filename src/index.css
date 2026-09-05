@@ -9,12 +9,16 @@
 }
 
 @theme {
-  --font-sans: 'BackBeat', system-ui, -apple-system, sans-serif;
-  --font-mono: 'BackBeat', monospace;
+  --font-sans: 'BackBeat', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.font-backbeat {
+  font-family: 'BackBeat', sans-serif;
 }
 
 html, body, button, input, select, textarea {
-  font-family: 'BackBeat', system-ui, -apple-system, sans-serif !important;
+  font-family: 'BackBeat', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 @layer utilities {

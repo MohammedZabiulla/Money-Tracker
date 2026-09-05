@@ -1,11 +1,15 @@
+import { TransactionRow } from '../transactions/TransactionRow';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Investment, InvestmentCategory, InvestmentCatalogItem } from '../../types';
 import { formatINR } from '../../lib/currency';
-import { Emblem3D } from '../common/IconHelper';
+import { ThemeColorPicker } from '../../lib/colorPalettes';
+import { Emblem3D, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { CustomDatePicker } from '../common/CustomDatePicker';
-import {
+import { ConfirmDeleteModal } from '../common/ConfirmDeleteModal';
+import { History, 
   X,
   Plus,
   Search,
@@ -14,7 +18,7 @@ import {
   Sparkles,
   TrendingUp,
   Layers,
-} from 'lucide-react';
+ } from 'lucide-react';
 
 interface InvestmentManagementModalProps {
   isOpen: boolean;
@@ -201,31 +205,44 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
   isOpen,
   onClose,
 }) => {
-  const { investments, accounts, addInvestment, updateInvestment, deleteInvestment } = useMoney();
+  useScrollLock(isOpen);
+
+  const { transactions, investments, accounts, creditCards, paymentApps, addInvestment, updateInvestment, deleteInvestment } = useMoney();
 
   const [activeTab, setActiveTab] = useState<'PORTFOLIO' | 'CATALOGUE' | 'CUSTOM'>('PORTFOLIO');
   const [catFilter, setCatFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Delete confirmation state
+  const [deleteConfirmInv, setDeleteConfirmInv] = useState<Investment | null>(null);
+
   // Quick Adopt State
   const [selectedCatalogItem, setSelectedCatalogItem] = useState<InvestmentCatalogItem | null>(null);
+  const [adoptInstitution, setAdoptInstitution] = useState('');
   const [adoptAmount, setAdoptAmount] = useState('50000');
   const [adoptCurrentValue, setAdoptCurrentValue] = useState('50000');
   const [adoptPurchaseDate, setAdoptPurchaseDate] = useState(() => new Date().toISOString().substring(0, 10));
   const [adoptAccountId, setAdoptAccountId] = useState('');
+  const [adoptCreditCardId, setAdoptCreditCardId] = useState('');
+  const [adoptPaymentAppId, setAdoptPaymentAppId] = useState('');
 
   // Custom Investment Form State
   const [customName, setCustomName] = useState('');
+  const [customInstitution, setCustomInstitution] = useState('');
   const [customCategory, setCustomCategory] = useState<InvestmentCategory>('MUTUAL_FUNDS');
   const [customInvestedAmt, setCustomInvestedAmt] = useState('');
   const [customCurrentVal, setCustomCurrentVal] = useState('');
   const [customFolio, setCustomFolio] = useState('');
   const [customDate, setCustomDate] = useState(() => new Date().toISOString().substring(0, 10));
   const [customAccountId, setCustomAccountId] = useState('');
+  const [customCreditCardId, setCustomCreditCardId] = useState('');
+  const [customPaymentAppId, setCustomPaymentAppId] = useState('');
   const [customNotes, setCustomNotes] = useState('');
+  const [customColor, setCustomColor] = useState('#10B981');
 
   // Editing investment state
   const [editingInv, setEditingInv] = useState<Investment | null>(null);
+  const [historyInv, setHistoryInv] = useState<Investment | null>(null);
 
   // Portfolio Totals
   const { totalInvested, totalCurrentVal, totalAbsoluteGain, totalGainPercent } = useMemo(() => {
@@ -278,6 +295,8 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
         value: a.id,
         label: a.name,
         sublabel: `${a.institution} • ${formatINR(a.calculatedBalance)}`,
+        isBankAccount: true,
+        bankTheme: a.institution,
       });
     });
     return opts;
@@ -303,11 +322,14 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
 
     addInvestment({
       name: selectedCatalogItem.name,
+      institution: adoptInstitution || undefined,
       category: selectedCatalogItem.category,
       investedAmount: invAmt,
       currentValue: curVal,
       purchaseDate: adoptPurchaseDate,
       linkedAccountId: adoptAccountId || undefined,
+      linkedCreditCardId: adoptCreditCardId || undefined,
+      linkedPaymentAppId: adoptPaymentAppId || undefined,
       icon: selectedCatalogItem.icon,
       color: selectedCatalogItem.color,
       notes: selectedCatalogItem.tagline,
@@ -332,18 +354,22 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
 
     addInvestment({
       name: customName.trim(),
+      institution: customInstitution || undefined,
       category: customCategory,
       investedAmount: invAmt,
       currentValue: curVal,
       purchaseDate: customDate,
       folioNumber: customFolio.trim() || undefined,
       linkedAccountId: customAccountId || undefined,
+      linkedCreditCardId: customCreditCardId || undefined,
+      linkedPaymentAppId: customPaymentAppId || undefined,
       icon: catCfg.icon,
-      color: catCfg.color,
+      color: customColor || catCfg.color,
       notes: customNotes.trim() || undefined,
     });
 
     setCustomName('');
+    setCustomInstitution('');
     setCustomInvestedAmt('');
     setCustomCurrentVal('');
     setCustomFolio('');
@@ -355,11 +381,16 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
     if (!editingInv) return;
     updateInvestment(editingInv.id, {
       name: editingInv.name,
+      institution: editingInv.institution,
       category: editingInv.category,
       investedAmount: editingInv.investedAmount,
       currentValue: editingInv.currentValue,
       purchaseDate: editingInv.purchaseDate,
       folioNumber: editingInv.folioNumber,
+      linkedAccountId: editingInv.linkedAccountId,
+      linkedCreditCardId: editingInv.linkedCreditCardId,
+      linkedPaymentAppId: editingInv.linkedPaymentAppId,
+      color: editingInv.color,
       notes: editingInv.notes,
     });
     setEditingInv(null);
@@ -548,12 +579,16 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-center space-x-2.5">
-                          <Emblem3D
-                            icon={inv.icon || cfg.icon}
-                            from={inv.color || cfg.color}
-                            to={inv.color || cfg.color}
-                            size="md"
-                          />
+                          {inv.institution ? (
+                            <Bank3DIcon institution={inv.institution} color={inv.color || cfg.color} size="md" />
+                          ) : (
+                            <Emblem3D
+                              icon={inv.icon || cfg.icon}
+                              from={inv.color || cfg.color}
+                              to={inv.color || cfg.color}
+                              size="md"
+                            />
+                          )}
                           <div>
                             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                               {cfg.label}
@@ -570,6 +605,14 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                         </div>
 
                         <div className="flex items-center space-x-1">
+                          
+                          <button
+                            onClick={() => setHistoryInv(inv)}
+                            className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-950/40 text-slate-400 hover:text-emerald-600"
+                            title="View Transactions"
+                          >
+                            <History size={13} />
+                          </button>
                           <button
                             onClick={() => setEditingInv(inv)}
                             className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-white"
@@ -577,7 +620,7 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                             <Edit2 size={13} />
                           </button>
                           <button
-                            onClick={() => deleteInvestment(inv.id)}
+                            onClick={() => setDeleteConfirmInv(inv)}
                             className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-500"
                           >
                             <Trash2 size={13} />
@@ -672,6 +715,7 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
           </div>
         )}
 
+
         {/* Tab 3: CUSTOM ASSET */}
         {activeTab === 'CUSTOM' && (
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 max-w-xl mx-auto w-full">
@@ -685,17 +729,42 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
             </div>
 
             <div className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Investment Asset Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Parag Parikh Flexi Cap, HDFC Bank Equity, SBI 3Yr FD"
-                  value={customName}
-                  onChange={e => setCustomName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Asset Name
+                  </label>
+                  <input
+                    type="text"
+                    value={customName}
+                    onChange={e => setCustomName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Institution / Broker
+                  </label>
+                  <CustomSelect
+                    value={customInstitution}
+                    onChange={val => setCustomInstitution(val)}
+                    options={[
+                      { value: '', label: 'Select...' },
+                      { value: 'Zerodha', label: 'Zerodha' },
+                      { value: 'Groww', label: 'Groww' },
+                      { value: 'Upstox', label: 'Upstox' },
+                      { value: 'Angel One', label: 'Angel One' },
+                      { value: 'SBI Mutual Fund', label: 'SBI Mutual Fund' },
+                      { value: 'HDFC Mutual Fund', label: 'HDFC Mutual Fund' },
+                      { value: 'ICICI Prudential', label: 'ICICI Prudential' },
+                      { value: 'Axis Mutual Fund', label: 'Axis Mutual Fund' },
+                      { value: 'Nippon India', label: 'Nippon India' },
+                      { value: 'Vanguard', label: 'Vanguard' },
+                      { value: 'Other', label: 'Other' },
+                    ]}
+                    size="sm"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -710,7 +779,6 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                     size="sm"
                   />
                 </div>
-
                 <div>
                   <CustomDatePicker
                     label="Purchase / Start Date"
@@ -734,7 +802,6 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm font-extrabold outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
-
                 <div>
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                     Current Portfolio Value (₹)
@@ -762,7 +829,6 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs outline-none"
                   />
                 </div>
-
                 <div>
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                     Funding Source Bank
@@ -775,7 +841,37 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                   />
                 </div>
               </div>
-
+              
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Funding Credit Card
+                  </label>
+                  <CustomSelect
+                    value={customCreditCardId}
+                    onChange={val => setCustomCreditCardId(val)}
+                    options={[
+                      { value: '', label: 'No linked credit card' },
+                      ...creditCards.map(cc => ({ value: cc.id, label: cc.name, isCreditCard: true, cardTheme: cc.cardTheme, network: cc.network }))
+                    ]}
+                    size="sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Payment App
+                  </label>
+                  <CustomSelect
+                    value={customPaymentAppId}
+                    onChange={val => setCustomPaymentAppId(val)}
+                    options={[
+                      { value: '', label: 'No linked app' },
+                      ...paymentApps.map(pa => ({ value: pa.id, label: pa.name, isPaymentApp: true, paymentAppName: pa.name }))
+                    ]}
+                    size="sm"
+                  />
+                </div>
+              </div>
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                   Notes / Goal Linking (Optional)
@@ -788,6 +884,12 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                   className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs outline-none"
                 />
               </div>
+
+              <ThemeColorPicker
+                value={customColor}
+                onChange={setCustomColor}
+                label="Theme Accent & Color"
+              />
 
               <button
                 onClick={handleCreateCustom}
@@ -841,7 +943,6 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm font-bold outline-none"
                   />
                 </div>
-
                 <div>
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                     Current Value (₹)
@@ -855,31 +956,90 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                 </div>
               </div>
 
-              <div>
-                <CustomDatePicker
-                  label="Purchase Date"
-                  value={adoptPurchaseDate}
-                  onChange={d => setAdoptPurchaseDate(d)}
-                  size="sm"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Institution / Broker
+                  </label>
+                  <CustomSelect
+                    value={adoptInstitution}
+                    onChange={val => setAdoptInstitution(val)}
+                    options={[
+                      { value: '', label: 'Select...' },
+                      { value: 'Zerodha', label: 'Zerodha' },
+                      { value: 'Groww', label: 'Groww' },
+                      { value: 'Upstox', label: 'Upstox' },
+                      { value: 'Angel One', label: 'Angel One' },
+                      { value: 'SBI Mutual Fund', label: 'SBI Mutual Fund' },
+                      { value: 'HDFC Mutual Fund', label: 'HDFC Mutual Fund' },
+                      { value: 'ICICI Prudential', label: 'ICICI Prudential' },
+                      { value: 'Axis Mutual Fund', label: 'Axis Mutual Fund' },
+                      { value: 'Nippon India', label: 'Nippon India' },
+                      { value: 'Vanguard', label: 'Vanguard' },
+                      { value: 'Other', label: 'Other' },
+                    ]}
+                    size="sm"
+                  />
+                </div>
+                <div>
+                  <CustomDatePicker
+                    label="Purchase Date"
+                    value={adoptPurchaseDate}
+                    onChange={d => setAdoptPurchaseDate(d)}
+                    size="sm"
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                   Funded From Account (Optional)
                 </label>
-                <select
+                <CustomSelect
                   value={adoptAccountId}
-                  onChange={e => setAdoptAccountId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold outline-none text-slate-800 dark:text-slate-200"
-                >
-                  <option value="">No linked account</option>
-                  {accounts.map(acc => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.name} ({formatINR(acc.calculatedBalance)})
-                    </option>
-                  ))}
-                </select>
+                  onChange={val => setAdoptAccountId(val)}
+                  options={[
+                    { value: '', label: 'No linked account' },
+                    ...accounts.map(acc => ({
+                      value: acc.id,
+                      label: acc.name,
+                      sublabel: `${acc.institution} • ${formatINR(acc.calculatedBalance)}`,
+                      isBankAccount: true,
+                      bankTheme: acc.institution
+                    }))
+                  ]}
+                  size="sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Funded From Credit Card (Optional)
+                </label>
+                <CustomSelect
+                  value={adoptCreditCardId}
+                  onChange={val => setAdoptCreditCardId(val)}
+                  options={[
+                    { value: '', label: 'No linked credit card' },
+                    ...creditCards.map(cc => ({ value: cc.id, label: cc.name, isCreditCard: true, cardTheme: cc.cardTheme, network: cc.network }))
+                  ]}
+                  size="sm"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Payment App (Optional)
+                </label>
+                <CustomSelect
+                  value={adoptPaymentAppId}
+                  onChange={val => setAdoptPaymentAppId(val)}
+                  options={[
+                    { value: '', label: 'No linked app' },
+                    ...paymentApps.map(pa => ({ value: pa.id, label: pa.name, isPaymentApp: true, paymentAppName: pa.name }))
+                  ]}
+                  size="sm"
+                />
               </div>
 
               <button
@@ -892,7 +1052,7 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
           </div>
         )}
 
-        {/* Edit Investment Modal */}
+                {/* Edit Investment Modal */}
         {editingInv && (
           <div className="fixed inset-0 z-[110] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-md w-full space-y-4 border border-emerald-200 dark:border-emerald-900/40 shadow-2xl">
@@ -909,16 +1069,42 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
               </div>
 
               <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Asset Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editingInv.name}
+                      onChange={e => setEditingInv({ ...editingInv, name: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold outline-none"
+                    />
+                  </div>
                 <div>
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Asset Name
-                  </label>
-                  <input
-                    type="text"
-                    value={editingInv.name}
-                    onChange={e => setEditingInv({ ...editingInv, name: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold outline-none"
-                  />
+                      Institution / Broker
+                    </label>
+                    <CustomSelect
+                      value={editingInv.institution || ''}
+                      onChange={val => setEditingInv({ ...editingInv, institution: val || undefined })}
+                      options={[
+                        { value: '', label: 'Select...' },
+                        { value: 'Zerodha', label: 'Zerodha' },
+                        { value: 'Groww', label: 'Groww' },
+                        { value: 'Upstox', label: 'Upstox' },
+                        { value: 'Angel One', label: 'Angel One' },
+                        { value: 'SBI Mutual Fund', label: 'SBI Mutual Fund' },
+                        { value: 'HDFC Mutual Fund', label: 'HDFC Mutual Fund' },
+                        { value: 'ICICI Prudential', label: 'ICICI Prudential' },
+                        { value: 'Axis Mutual Fund', label: 'Axis Mutual Fund' },
+                        { value: 'Nippon India', label: 'Nippon India' },
+                        { value: 'Vanguard', label: 'Vanguard' },
+                        { value: 'Other', label: 'Other' },
+                      ]}
+                      size="sm"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -935,9 +1121,8 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                       className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold outline-none"
                     />
                   </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                       Current Value (₹)
                     </label>
                     <input
@@ -951,6 +1136,12 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
                   </div>
                 </div>
 
+                <div className="grid grid-cols-3 gap-2"><div><label className="text-[10px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">Bank</label><CustomSelect value={editingInv.linkedAccountId || ''} onChange={val => setEditingInv({ ...editingInv, linkedAccountId: val || undefined })} options={[{ value: '', label: 'None' }, ...accounts.map(a => ({ value: a.id, label: a.name, isBankAccount: true, bankTheme: a.institution }))]} size="sm" /></div><div><label className="text-[10px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">Credit Card</label><CustomSelect value={editingInv.linkedCreditCardId || ''} onChange={val => setEditingInv({ ...editingInv, linkedCreditCardId: val || undefined })} options={[{ value: '', label: 'None' }, ...creditCards.map(c => ({ value: c.id, label: c.name }))]} size="sm" /></div><div><label className="text-[10px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">Payment App</label><CustomSelect value={editingInv.linkedPaymentAppId || ''} onChange={val => setEditingInv({ ...editingInv, linkedPaymentAppId: val || undefined })} options={[{ value: '', label: 'None' }, ...paymentApps.map(pa => ({ value: pa.id, label: pa.name, isPaymentApp: true, paymentAppName: pa.name }))]} size="sm" /></div></div><ThemeColorPicker
+                  value={editingInv.color || '#10B981'}
+                  onChange={c => setEditingInv({ ...editingInv, color: c })}
+                  label="Theme Accent & Color"
+                />
+
                 <button
                   onClick={handleSaveEdit}
                   className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md"
@@ -961,6 +1152,91 @@ export const InvestmentManagementModal: React.FC<InvestmentManagementModalProps>
             </div>
           </div>
         )}
+
+        {/* INVESTMENT TRANSACTIONS HISTORY SUB-MODAL */}
+        {historyInv && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <History className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">Transaction History</h3>
+                    <span className="text-[11px] text-slate-500">{historyInv.name}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setHistoryInv(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 no-scrollbar">
+                {(() => {
+                  const invTxs = transactions.filter(t => !t.isDeleted && t.investmentId === historyInv.id).sort((a, b) => b.timestamp - a.timestamp);
+                  if (invTxs.length === 0) {
+                    return (
+                      <div className="text-center py-8 text-xs text-slate-400">
+                        No transactions recorded for this asset yet.
+                      </div>
+                    );
+                  }
+                  return invTxs.map((t, idx) => (
+                    <TransactionRow
+                      key={`inv_tx_${t.id}_${idx}`}
+                      t={t}
+                      isSelectionMode={false}
+                      isSelected={false}
+                      onPointerDown={() => {}}
+                      onPointerUpOrLeave={() => {}}
+                      wasLongPressRef={{ current: false }}
+                      onSelectTransaction={() => {}}
+                      onToggleSelection={() => {}}
+                      setSearchQuery={() => {}}
+                      setSelectedAccountId={() => {}}
+                      categoriesMap={new Map()}
+                      accountsMap={new Map()}
+                      creditCardsMap={new Map()}
+                      investmentsMap={new Map(investments.map(i => [i.id, i]))}
+                      goalsMap={new Map()}
+                      debtsMap={new Map()}
+                      onSetDeleteTarget={() => {}}
+                    />
+                  ));
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        <ConfirmDeleteModal
+          isOpen={Boolean(deleteConfirmInv)}
+          onClose={() => setDeleteConfirmInv(null)}
+          onConfirm={() => {
+            if (deleteConfirmInv) {
+              deleteInvestment(deleteConfirmInv.id);
+              setDeleteConfirmInv(null);
+            }
+          }}
+          title="Delete Investment Asset?"
+          description="Are you sure you want to delete this investment asset? You can restore it anytime from More → Trash Bin."
+          itemDetails={
+            deleteConfirmInv
+              ? {
+                  title: deleteConfirmInv.name,
+                  amount: `Current: ${formatINR(deleteConfirmInv.currentValue)}`,
+                  subtitle: `Invested: ${formatINR(deleteConfirmInv.investedAmount)} • ${deleteConfirmInv.institution || 'Asset'}`,
+                  badge: deleteConfirmInv.type.replace(/_/g, ' '),
+                }
+              : undefined
+          }
+          confirmLabel="Delete Investment"
+        />
+
       </div>
     </div>
   );

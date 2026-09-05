@@ -1,8 +1,10 @@
+import { useScrollLock } from "../../hooks/useScrollLock";
 import React, { useState } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Lock, Fingerprint, Delete, ShieldCheck } from 'lucide-react';
 
 export const LockScreen: React.FC = () => {
+  useScrollLock(true);
   const { unlockApp, settings } = useMoney();
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');

@@ -33,6 +33,87 @@ const BANK_3D_METADATA: Record<
     accentGlow: 'rgba(0, 76, 143, 0.45)',
     badgeText: 'HDFC',
   },
+
+  'Zerodha': {
+    shortName: 'KITE',
+    primaryColor: '#387ed1',
+    secondaryColor: '#1d5594',
+    textColor: '#ffffff',
+    accentGlow: 'rgba(56, 126, 209, 0.45)',
+    badgeText: 'Z',
+  },
+  'Groww': {
+    shortName: 'GROWW',
+    primaryColor: '#00d09c',
+    secondaryColor: '#007b5c',
+    textColor: '#ffffff',
+    accentGlow: 'rgba(0, 208, 156, 0.45)',
+    badgeText: 'G',
+  },
+  'Upstox': {
+    shortName: 'UPSTOX',
+    primaryColor: '#7b22a0',
+    secondaryColor: '#45095d',
+    textColor: '#ffffff',
+    accentGlow: 'rgba(123, 34, 160, 0.45)',
+    badgeText: 'U',
+  },
+  'Angel One': {
+    shortName: 'ANGEL',
+    primaryColor: '#ff6200',
+    secondaryColor: '#b34500',
+    textColor: '#ffffff',
+    accentGlow: 'rgba(255, 98, 0, 0.45)',
+    badgeText: 'A1',
+  },
+  'SBI Mutual Fund': {
+    shortName: 'SBI MF',
+    primaryColor: '#00b0f0',
+    secondaryColor: '#005b82',
+    textColor: '#ffffff',
+    accentGlow: 'rgba(0, 176, 240, 0.45)',
+    badgeText: 'SBI',
+  },
+  'HDFC Mutual Fund': {
+    shortName: 'HDFC MF',
+    primaryColor: '#004c8f',
+    secondaryColor: '#00284d',
+    textColor: '#ffffff',
+    accentGlow: 'rgba(0, 76, 143, 0.45)',
+    badgeText: 'HDFC',
+  },
+  'ICICI Prudential': {
+    shortName: 'ICICI MF',
+    primaryColor: '#f37e20',
+    secondaryColor: '#b84e03',
+    textColor: '#ffffff',
+    accentGlow: 'rgba(243, 126, 32, 0.45)',
+    badgeText: 'ICICI',
+  },
+  'Axis Mutual Fund': {
+    shortName: 'AXIS MF',
+    primaryColor: '#97144d',
+    secondaryColor: '#5c062c',
+    textColor: '#ffffff',
+    accentGlow: 'rgba(151, 20, 77, 0.45)',
+    badgeText: 'AXIS',
+  },
+  'Nippon India': {
+    shortName: 'NIPPON',
+    primaryColor: '#e2231a',
+    secondaryColor: '#960c06',
+    textColor: '#ffffff',
+    accentGlow: 'rgba(226, 35, 26, 0.45)',
+    badgeText: 'N',
+  },
+  'Vanguard': {
+    shortName: 'VANGUARD',
+    primaryColor: '#9e1b34',
+    secondaryColor: '#5c0d1c',
+    textColor: '#ffffff',
+    accentGlow: 'rgba(158, 27, 52, 0.45)',
+    badgeText: 'V',
+  },
   'State Bank of India': {
     shortName: 'SBI',
     primaryColor: '#280071',
@@ -218,8 +299,21 @@ export const Bank3DIcon: React.FC<Bank3DIconProps> = ({
     }
   }
 
-  // Lookup matched bank
-  const bankMeta = institution ? BANK_3D_METADATA[institution] : undefined;
+  // Smart Lookup matched bank
+  let bankMeta = undefined;
+  if (institution) {
+    const searchStr = institution.toLowerCase().trim();
+    // Direct match first
+    bankMeta = BANK_3D_METADATA[institution];
+    if (!bankMeta) {
+      const matchKey = Object.keys(BANK_3D_METADATA).find(k => 
+        k.toLowerCase() === searchStr || 
+        searchStr.includes(k.toLowerCase()) || 
+        k.toLowerCase().includes(searchStr)
+      );
+      if (matchKey) bankMeta = BANK_3D_METADATA[matchKey];
+    }
+  }
   const primary = color || bankMeta?.primaryColor || '#0284c7';
   const secondary = bankMeta?.secondaryColor || '#0369a1';
   const textCol = bankMeta?.textColor || '#ffffff';

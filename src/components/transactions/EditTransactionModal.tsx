@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Transaction, TransactionType, SplitItem } from '../../types';
 import { Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
@@ -7,6 +7,7 @@ import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { CustomDatePicker } from '../common/CustomDatePicker';
 import { CustomTimePicker } from '../common/CustomTimePicker';
 import { PaymentAppManagementModal } from '../paymentApps/PaymentAppManagementModal';
+import { InvestmentManagementModal } from '../investments/InvestmentManagementModal';
 import { AddAccountOrCardModal } from '../accounts/AddAccountOrCardModal';
 import { formatINR, CURRENCY_RATES } from '../../lib/currency';
 import {
@@ -19,6 +20,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { POPULAR_TAGS, CARD_THEMES } from '../../lib/constants';
+import { useScrollLock } from '../../hooks/useScrollLock';
 
 interface EditTransactionModalProps {
   transaction: Transaction | null;
@@ -31,11 +33,14 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  useScrollLock(isOpen);
+
   const {
     updateTransaction,
     categories,
     accounts,
     creditCards,
+    investments,
     paymentApps,
     goals,
   } = useMoney();
@@ -47,6 +52,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const [merchantName, setMerchantName] = useState<string>('');
   const [categoryId, setCategoryId] = useState<string>('');
   const [subcategory, setSubcategory] = useState<string>('');
+  const [investmentId, setInvestmentId] = useState<string>('');
   const [selectedSourceType, setSelectedSourceType] = useState<'ACCOUNT' | 'CARD'>('ACCOUNT');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [selectedCreditCardId, setSelectedCreditCardId] = useState<string>('');
@@ -59,6 +65,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const [customTagInput, setCustomTagInput] = useState<string>('');
   const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
   const [showPaymentAppModal, setShowPaymentAppModal] = useState<boolean>(false);
+  const [showInvestmentModal, setShowInvestmentModal] = useState<boolean>(false);
   const [showAccountCardModal, setShowAccountCardModal] = useState<boolean>(false);
   const [accountCardDefaultTab, setAccountCardDefaultTab] = useState<'BANK' | 'CARD' | 'WALLET'>('BANK');
 
@@ -68,16 +75,31 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
   useEffect(() => {
     if (transaction && isOpen) {
-      setType(transaction.type);
+      setType(typeof transaction.type === 'string' && transaction.type ? transaction.type : 'EXPENSE');
       setAmount(transaction.amount.toString());
       setDate(transaction.date);
-      setTime(transaction.time || '12:00');
+      let initialTime = transaction.time || '';
+      if (!initialTime && transaction.timestamp) {
+        const d = new Date(transaction.timestamp);
+        initialTime = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+      } else if (initialTime && initialTime.split(':').length === 2 && transaction.timestamp) {
+        const s = new Date(transaction.timestamp).getSeconds();
+        initialTime = `${initialTime}:${String(s).padStart(2, '0')}`;
+      }
+      setTime(initialTime || '12:00:00');
       setMerchantName(transaction.merchantName || '');
       setCategoryId(transaction.categoryId || '');
       setSubcategory(transaction.subcategory || '');
-      if (transaction.creditCardId && transaction.type === 'CARD_PAYMENT') {
-        setSelectedCreditCardId(transaction.creditCardId);
+      setInvestmentId(transaction.investmentId || '');
+      if (transaction.type === 'CARD_PAYMENT') {
         setSelectedAccountId(transaction.accountId || '');
+        setSelectedCreditCardId(transaction.creditCardId || ''); // Assuming legacy mapped source to accountId or creditCardId!
+        setSelectedToCardId(transaction.toCreditCardId || transaction.creditCardId || '');
+        // For legacy CARD_PAYMENT, creditCardId was actually the DESTINATION.
+        // If they both exist, it's new.
+        if (!transaction.toCreditCardId && transaction.creditCardId) {
+           setSelectedCreditCardId(''); // clear it from source since it was destination
+        }
       } else if (transaction.creditCardId) {
         setSelectedSourceType('CARD');
         setSelectedCreditCardId(transaction.creditCardId);
@@ -98,6 +120,74 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       setSplits(transaction.splits || []);
     }
   }, [transaction, isOpen]);
+
+  const prevGoalIdRef = useRef<string>('');
+  const prevTypeRef = useRef<string>('');
+  useEffect(() => {
+    if (transaction && isOpen) {
+      if (selectedGoalId !== (transaction.goalId || '') || type !== transaction.type) {
+        if (selectedGoalId) {
+          const goal = goals.find(g => g.id === selectedGoalId);
+          if (goal) {
+            const isIncome = type === 'INCOME';
+            const depositCount = (goal.allocations || []).filter(a => a.type === 'DEPOSIT').length;
+            const expectedDepositNote = `Goal: deposit towards ${goal.name} - ${depositCount + 1}`;
+            const expectedWithdrawalNote = `Goal: withdrawal from ${goal.name}`;
+
+            if (selectedGoalId !== prevGoalIdRef.current || type !== prevTypeRef.current) {
+              if (isIncome) {
+                setNotes(expectedWithdrawalNote);
+                setCategoryId('other_income');
+              } else {
+                setNotes(expectedDepositNote);
+                setCategoryId('investments_expense');
+              }
+            }
+          }
+        } else if (prevGoalIdRef.current && prevGoalIdRef.current !== (transaction.goalId || '')) {
+          const prevGoal = goals.find(g => g.id === prevGoalIdRef.current);
+          if (prevGoal) {
+            const possibleNotes = [
+              `Goal: withdrawal from ${prevGoal.name}`,
+              ...Array.from({ length: 100 }, (_, i) => `Goal: deposit towards ${prevGoal.name} - ${i + 1}`)
+            ];
+            if (possibleNotes.includes(notes)) {
+              setNotes(transaction.notes || '');
+            }
+          }
+        }
+      }
+      prevGoalIdRef.current = selectedGoalId;
+      prevTypeRef.current = type;
+    }
+  }, [selectedGoalId, type, goals, transaction, isOpen, notes]);
+
+  const prevInvestmentIdRef = useRef<string>(transaction?.investmentId || '');
+  useEffect(() => {
+    if (isOpen && transaction && investmentId && type === 'INVESTMENT_CONTRIBUTION') {
+      const inv = investments.find(i => i.id === investmentId);
+      if (inv) {
+        if (investmentId !== prevInvestmentIdRef.current) {
+          if (!notes.trim() || notes === transaction.notes) {
+            setNotes(`Investment contribution to ${inv.name}`);
+          }
+          
+          if (inv.linkedAccountId && accounts.some(a => a.id === inv.linkedAccountId)) {
+            setSelectedSourceType('ACCOUNT');
+            setSelectedAccountId(inv.linkedAccountId);
+          } else if (inv.linkedCreditCardId && creditCards.some(c => c.id === inv.linkedCreditCardId)) {
+            setSelectedSourceType('CARD');
+            setSelectedCreditCardId(inv.linkedCreditCardId);
+          }
+          
+          if (inv.linkedPaymentAppId && paymentApps.some(p => p.id === inv.linkedPaymentAppId)) {
+            setPaymentAppId(inv.linkedPaymentAppId);
+          }
+        }
+      }
+    }
+    prevInvestmentIdRef.current = investmentId;
+  }, [investmentId, type, investments, accounts, creditCards, paymentApps, notes, isOpen, transaction]);
 
   const parsedAmount = Math.max(0, parseFloat(amount) || 0);
   const totalSplitAmount = splits.reduce((sum, s) => sum + (s.amount || 0), 0);
@@ -239,6 +329,11 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       return;
     }
 
+    if (type === 'INVESTMENT_CONTRIBUTION' && !investmentId) {
+      alert('Please select an investment asset to link this contribution to.');
+      return;
+    }
+
     const selectedAcc = activeAccounts.find(a => a.id === selectedAccountId);
     const selectedCc = activeCards.find(c => c.id === selectedCreditCardId);
     const selectedToAcc = activeAccounts.find(a => a.id === toAccountId);
@@ -252,12 +347,21 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       time,
       merchantName: type === 'MONEY_LENT' || type === 'MONEY_BORROWED' ? undefined : (merchantName.trim() || undefined),
       debtPersonName: type === 'MONEY_LENT' || type === 'MONEY_BORROWED' ? (merchantName.trim() || undefined) : undefined,
-      categoryId: (type === 'TRANSFER' || type === 'CARD_PAYMENT' || type === 'MONEY_LENT' || type === 'MONEY_BORROWED') ? 'cat_transfer' : (isSplitMode && splits.length > 0 ? splits[0].categoryId : (categoryId || undefined)),
-      categoryName: type === 'CARD_PAYMENT' ? 'Credit Card Payment' : type === 'TRANSFER' ? 'Transfer' : type === 'MONEY_LENT' ? 'Money Lent' : type === 'MONEY_BORROWED' ? 'Money Borrowed' : (isSplitMode && splits.length > 0 ? categories.find(c => c.id === splits[0].categoryId)?.name : (currentCategory?.name || undefined)),
+      categoryId: (type === 'TRANSFER' || type === 'CARD_PAYMENT' || type === 'MONEY_LENT' || type === 'MONEY_BORROWED' || type === 'INVESTMENT_CONTRIBUTION') ? 'cat_transfer' : (isSplitMode && splits.length > 0 ? splits[0].categoryId : (categoryId || undefined)),
+      categoryName: type === 'CARD_PAYMENT' ? 'Credit Card Payment' : type === 'TRANSFER' ? 'Transfer' : type === 'INVESTMENT_CONTRIBUTION' ? 'Investment Contribution' : type === 'MONEY_LENT' ? 'Money Lent' : type === 'MONEY_BORROWED' ? 'Money Borrowed' : (isSplitMode && splits.length > 0 ? categories.find(c => c.id === splits[0].categoryId)?.name : (currentCategory?.name || undefined)),
       subcategory: subcategory || undefined,
+      accountId: selectedAccountId || undefined,
+      accountName: selectedAcc?.name,
+      creditCardId: selectedCreditCardId || undefined,
+      creditCardName: selectedCc?.name,
+      toAccountId: toAccountId || undefined,
+      toAccountName: selectedToAcc?.name,
+      toCreditCardId: selectedToCardId || undefined,
+      toCreditCardName: selectedToCard?.name,
       paymentAppId: paymentAppId || undefined,
       paymentAppName: selectedApp?.name || undefined,
       goalId: selectedGoalId || undefined,
+      investmentId: investmentId || undefined,
       notes: notes.trim() || undefined,
       tags: tags.length > 0 ? tags : undefined,
       splits: isSplitMode && splits.length > 0 ? splits : undefined,
@@ -267,44 +371,6 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       if (!confirm(`Split sum (₹${totalSplitAmount.toFixed(2)}) does not equal total transaction (₹${numAmount.toFixed(2)}). Do you want to save anyway?`)) {
         return;
       }
-    }
-
-    if (type === 'TRANSFER') {
-      updates.accountId = selectedAccountId || undefined;
-      updates.accountName = selectedAcc?.name;
-      updates.creditCardId = selectedCreditCardId || undefined;
-      updates.creditCardName = selectedCc?.name;
-      updates.toAccountId = toAccountId || undefined;
-      updates.toAccountName = selectedToAcc?.name;
-      updates.toCreditCardId = selectedToCardId || undefined;
-      updates.toCreditCardName = selectedToCard?.name;
-    } else if (type === 'CARD_PAYMENT') {
-      updates.accountId = selectedAccountId;
-      updates.accountName = selectedAcc?.name;
-      updates.creditCardId = selectedCreditCardId;
-      updates.creditCardName = selectedCc?.name;
-      updates.toAccountId = undefined;
-      updates.toAccountName = undefined;
-      updates.toCreditCardId = undefined;
-      updates.toCreditCardName = undefined;
-    } else if (selectedSourceType === 'CARD' && type === 'EXPENSE') {
-      updates.creditCardId = selectedCreditCardId;
-      updates.creditCardName = selectedCc?.name;
-      updates.accountId = undefined;
-      updates.accountName = undefined;
-      updates.toAccountId = undefined;
-      updates.toAccountName = undefined;
-      updates.toCreditCardId = undefined;
-      updates.toCreditCardName = undefined;
-    } else {
-      updates.accountId = selectedAccountId;
-      updates.accountName = selectedAcc?.name;
-      updates.creditCardId = undefined;
-      updates.creditCardName = undefined;
-      updates.toAccountId = undefined;
-      updates.toAccountName = undefined;
-      updates.toCreditCardId = undefined;
-      updates.toCreditCardName = undefined;
     }
 
     updateTransaction(transaction.id, updates);
@@ -349,11 +415,11 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
         {/* Form Body */}
         <form id="edit-transaction-form" onSubmit={handleSave} className="p-5 overflow-y-auto space-y-4 flex-1">
           {/* Transaction Type Segmented Switch */}
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl">
+          <div className="flex items-center space-x-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => setType('EXPENSE')}
-              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
+              className={`flex-1 min-w-[58px] py-2 text-[11px] font-bold rounded-xl transition-all text-center whitespace-nowrap ${
                 type === 'EXPENSE'
                   ? 'bg-rose-500 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -364,7 +430,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             <button
               type="button"
               onClick={() => setType('INCOME')}
-              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
+              className={`flex-1 min-w-[58px] py-2 text-[11px] font-bold rounded-xl transition-all text-center whitespace-nowrap ${
                 type === 'INCOME'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -375,7 +441,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             <button
               type="button"
               onClick={() => setType('TRANSFER')}
-              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
+              className={`flex-1 min-w-[58px] py-2 text-[11px] font-bold rounded-xl transition-all text-center whitespace-nowrap ${
                 type === 'TRANSFER'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -386,7 +452,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             <button
               type="button"
               onClick={() => setType('CARD_PAYMENT')}
-              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
+              className={`flex-1 min-w-[62px] py-2 text-[11px] font-bold rounded-xl transition-all text-center whitespace-nowrap ${
                 type === 'CARD_PAYMENT'
                   ? 'bg-purple-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -396,9 +462,20 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             </button>
             <button
               type="button"
+              onClick={() => setType('INVESTMENT_CONTRIBUTION')}
+              className={`flex-1 min-w-[58px] py-2 text-[11px] font-bold rounded-xl transition-all text-center whitespace-nowrap ${
+                type === 'INVESTMENT_CONTRIBUTION'
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Invest
+            </button>
+            <button
+              type="button"
               onClick={() => setType('MONEY_LENT')}
-              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
-                type === 'MONEY_LENT'
+              className={`flex-1 min-w-[52px] py-2 text-[11px] font-bold rounded-xl transition-all text-center whitespace-nowrap ${
+                type === 'MONEY_LENT' || type === 'MONEY_LENT_REPAYMENT'
                   ? 'bg-amber-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
@@ -408,8 +485,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             <button
               type="button"
               onClick={() => setType('MONEY_BORROWED')}
-              className={`py-2 text-[11px] font-bold rounded-xl transition-all ${
-                type === 'MONEY_BORROWED'
+              className={`flex-1 min-w-[52px] py-2 text-[11px] font-bold rounded-xl transition-all text-center whitespace-nowrap ${
+                type === 'MONEY_BORROWED' || type === 'MONEY_BORROWED_REPAYMENT'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
@@ -578,7 +655,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
           </div>
 
           {/* Category & Subcategory (for Expense / Income) */}
-          {type !== 'TRANSFER' && (
+          {type !== 'TRANSFER' && type !== 'INVESTMENT_CONTRIBUTION' && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -654,6 +731,36 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             </div>
           )}
 
+          {/* Investment Selector */}
+          {type === 'INVESTMENT_CONTRIBUTION' && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  Select Investment Asset
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowInvestmentModal(true)}
+                  className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 flex items-center space-x-1 hover:underline"
+                >
+                  <Plus size={12} className="mr-0.5" />
+                  <span>Add New Asset</span>
+                </button>
+              </div>
+              <CustomSelect
+                value={investmentId}
+                onChange={setInvestmentId}
+                options={[
+                  { value: '', label: 'Select an investment...' },
+                  ...investments.filter(i => !i.isDeleted).map(inv => ({
+                    value: inv.id,
+                    label: `${inv.name} (${formatINR(inv.currentValue)})`
+                  }))
+                ]}
+              />
+            </div>
+          )}
+
           {/* Account / Card Selection */}
           {type === 'TRANSFER' ? (
             <div className="space-y-3">
@@ -710,7 +817,6 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
                   {activeCards.map(card => {
                     const isSelected = selectedCreditCardId === card.id;
-                    const theme = CARD_THEMES.find(t => t.id === card.cardTheme) || CARD_THEMES[0];
                     return (
                       <button
                         key={card.id}
@@ -721,7 +827,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                         }}
                         className={`px-3 py-2 rounded-2xl border text-xs font-medium whitespace-nowrap flex items-center space-x-2.5 transition-all shrink-0 ${
                           isSelected
-                            ? `border-purple-500 bg-gradient-to-r ${theme.gradient} text-white font-bold shadow-lg ring-2 ring-purple-500/40`
+                            ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/50 text-purple-800 dark:text-purple-200 font-bold shadow-md ring-2 ring-purple-500/30'
                             : 'border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
                         }`}
                       >
@@ -734,7 +840,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                         />
                         <div className="text-left">
                           <span className="block leading-tight">{card.name}</span>
-                          <span className={`text-[10px] font-mono ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                          <span className={`text-[10px] font-semibold ${isSelected ? 'text-purple-700 dark:text-purple-300' : 'text-slate-500'}`}>
                             ••{card.lastFourDigits} • Due: {formatINR(card.currentOutstanding)}
                           </span>
                         </div>
@@ -784,7 +890,6 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
                   {activeCards.filter(c => c.id !== selectedCreditCardId).map(card => {
                     const isSelected = selectedToCardId === card.id;
-                    const theme = CARD_THEMES.find(t => t.id === card.cardTheme) || CARD_THEMES[0];
                     return (
                       <button
                         key={card.id}
@@ -795,7 +900,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                         }}
                         className={`px-3 py-2 rounded-2xl border text-xs font-medium whitespace-nowrap flex items-center space-x-2.5 transition-all shrink-0 ${
                           isSelected
-                            ? `border-purple-500 bg-gradient-to-r ${theme.gradient} text-white font-bold shadow-lg ring-2 ring-purple-500/40`
+                            ? 'border-purple-500 bg-purple-50/80 dark:bg-purple-950/50 text-purple-800 dark:text-purple-200 font-bold shadow-md ring-2 ring-purple-500/30'
                             : 'border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
                         }`}
                       >
@@ -808,7 +913,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                         />
                         <div className="text-left">
                           <span className="block leading-tight">{card.name}</span>
-                          <span className={`text-[10px] font-mono ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+                          <span className={`text-[10px] font-semibold ${isSelected ? 'text-purple-700 dark:text-purple-300' : 'text-slate-500'}`}>
                             ••{card.lastFourDigits} • Due: {formatINR(card.currentOutstanding)}
                           </span>
                         </div>
@@ -822,12 +927,21 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <CustomSelect
-                  label="Pay From Bank Account"
-                  title="Select Bank Account"
-                  value={selectedAccountId}
-                  onChange={val => setSelectedAccountId(val)}
-                  options={accountOptions}
-                  placeholder="Select Bank Account"
+                  label="Pay From Account / Credit Card"
+                  title="Select Source"
+                  value={selectedAccountId || selectedCreditCardId}
+                  onChange={val => {
+                    const isCard = creditCardOptions.some(c => c.value === val);
+                    if (isCard) {
+                      setSelectedCreditCardId(val);
+                      setSelectedAccountId('');
+                    } else {
+                      setSelectedAccountId(val);
+                      setSelectedCreditCardId('');
+                    }
+                  }}
+                  options={[...accountOptions, ...creditCardOptions]}
+                  placeholder="Select Source"
                   searchable={true}
                 />
               </div>
@@ -835,8 +949,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                 <CustomSelect
                   label="Pay To Credit Card"
                   title="Select Credit Card"
-                  value={selectedCreditCardId}
-                  onChange={val => setSelectedCreditCardId(val)}
+                  value={selectedToCardId}
+                  onChange={val => setSelectedToCardId(val)}
                   options={creditCardOptions}
                   placeholder="Select Credit Card"
                   searchable={true}
@@ -1010,6 +1124,27 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             </div>
           )}
 
+          {/* Investment Linkage */}
+          {type !== 'INVESTMENT_CONTRIBUTION' && investments.filter(i => !i.isDeleted).length > 0 && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 flex items-center space-x-1">
+                <span className="text-teal-600 dark:text-teal-400 font-black">📈</span>
+                <span>Link to Investment</span>
+              </label>
+              <CustomSelect
+                value={investmentId}
+                onChange={setInvestmentId}
+                options={[
+                  { value: '', label: 'No investment linked' },
+                  ...investments.filter(i => !i.isDeleted).map(inv => ({
+                    value: inv.id,
+                    label: `${inv.name} (${formatINR(inv.currentValue)})`
+                  }))
+                ]}
+              />
+            </div>
+          )}
+
           {/* Notes */}
           <div>
             <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
@@ -1075,34 +1210,53 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       </div>
 
       {/* Category Management Modal */}
-      <CategoryManagementModal
-        isOpen={showCategoryModal}
-        onClose={() => setShowCategoryModal(false)}
-      />
+      {showCategoryModal && (
+        <CategoryManagementModal
+          isOpen={showCategoryModal}
+          onClose={() => setShowCategoryModal(false)}
+          onSelectCategory={(cat) => {
+            setCategoryId(cat.id);
+            setSubcategory('');
+            setShowCategoryModal(false);
+          }}
+        />
+      )}
 
       {/* Payment App Management Modal */}
-      <PaymentAppManagementModal
-        isOpen={showPaymentAppModal}
-        onClose={() => setShowPaymentAppModal(false)}
-        onSelectPaymentApp={app => {
-          setPaymentAppId(app.id);
-        }}
-      />
+      {showPaymentAppModal && (
+        <PaymentAppManagementModal
+          isOpen={showPaymentAppModal}
+          onClose={() => setShowPaymentAppModal(false)}
+          onSelectPaymentApp={app => {
+            setPaymentAppId(app.id);
+          }}
+        />
+      )}
+
+      {/* Investment Management Modal */}
+      {showInvestmentModal && (
+        <InvestmentManagementModal
+          isOpen={showInvestmentModal}
+          onClose={() => setShowInvestmentModal(false)}
+        />
+      )}
 
       {/* Add Account / Card Modal */}
-      <AddAccountOrCardModal
-        isOpen={showAccountCardModal}
-        onClose={() => setShowAccountCardModal(false)}
-        defaultTab={accountCardDefaultTab}
-        onCreatedAccount={acc => {
-          setSelectedAccountId(acc.id);
-          setSelectedSourceType('ACCOUNT');
-        }}
-        onCreatedCard={card => {
-          setSelectedCreditCardId(card.id);
-          setSelectedSourceType('CARD');
-        }}
-      />
+      {showAccountCardModal && (
+        <AddAccountOrCardModal
+          isOpen={showAccountCardModal}
+          onClose={() => setShowAccountCardModal(false)}
+          defaultTab={accountCardDefaultTab}
+          onCreatedAccount={acc => {
+            setSelectedAccountId(acc.id);
+            setSelectedSourceType('ACCOUNT');
+          }}
+          onCreatedCard={card => {
+            setSelectedCreditCardId(card.id);
+            setSelectedSourceType('CARD');
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -1,9 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import { useScrollLock } from '../../hooks/useScrollLock';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Goal, GoalAllocation } from '../../types';
 import { formatINR } from '../../lib/currency';
+import { ThemeColorPicker } from '../../lib/colorPalettes';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { CustomDatePicker } from '../common/CustomDatePicker';
+import { ConfirmDeleteModal } from '../common/ConfirmDeleteModal';
 import {
   X,
   Plus,
@@ -30,6 +33,7 @@ import {
   Clock,
   PiggyBank,
   Check,
+  RefreshCw,
 } from 'lucide-react';
 
 interface GoalManagementModalProps {
@@ -94,18 +98,36 @@ const COLOR_OPTIONS = [
 ];
 
 export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen, onClose }) => {
+  useScrollLock(isOpen);
+
   const {
     goals,
     accounts,
+    transactions,
     addGoal,
     updateGoal,
     deleteGoal,
     allocateToGoal,
+    deleteTransaction,
+    reopenClosedGoal,
   } = useMoney();
 
-  const [activeTab, setActiveTab] = useState<'all' | 'in_progress' | 'completed'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'in_progress' | 'completed' | 'closed'>('all');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+
+  // Reopen modal state
+  const [reopeningGoal, setReopeningGoal] = useState<Goal | null>(null);
+
+  const handleOpenReopenDialog = (goal: Goal) => {
+    setReopeningGoal(goal);
+  };
+
+  const handleConfirmReopen = () => {
+    if (!reopeningGoal) return;
+    reopenClosedGoal(reopeningGoal.id);
+    setReopeningGoal(null);
+  };
 
   // Allocation modal state
   const [allocatingGoal, setAllocatingGoal] = useState<Goal | null>(null);
@@ -116,6 +138,9 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
 
   // History modal state
   const [historyGoal, setHistoryGoal] = useState<Goal | null>(null);
+
+  // Delete confirmation state
+  const [deleteConfirmGoal, setDeleteConfirmGoal] = useState<Goal | null>(null);
 
   // Form State for Create / Edit
   const [formData, setFormData] = useState({
@@ -133,12 +158,29 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
     return (goals || []).filter(g => !g.isDeleted);
   }, [goals]);
 
+  useEffect(() => {
+    if (isOpen) {
+      const hasInProgress = activeGoals.some(g => g.status !== 'COMPLETED' && g.status !== 'CLOSED');
+      const hasCompleted = activeGoals.some(g => g.status === 'COMPLETED');
+      if (hasInProgress) {
+        setActiveTab('in_progress');
+      } else if (hasCompleted) {
+        setActiveTab('completed');
+      } else {
+        setActiveTab('in_progress');
+      }
+    }
+  }, [isOpen, activeGoals]);
+
   const filteredGoals = useMemo(() => {
     if (activeTab === 'in_progress') {
-      return activeGoals.filter(g => g.status !== 'COMPLETED');
+      return activeGoals.filter(g => g.status !== 'COMPLETED' && g.status !== 'CLOSED');
     }
     if (activeTab === 'completed') {
       return activeGoals.filter(g => g.status === 'COMPLETED');
+    }
+    if (activeTab === 'closed') {
+      return activeGoals.filter(g => g.status === 'CLOSED');
     }
     return activeGoals;
   }, [activeGoals, activeTab]);
@@ -259,6 +301,102 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
     setAllocatingGoal(null);
   };
 
+  const handleDeleteAllocation = (alloc: GoalAllocation) => {
+    if (!historyGoal) return;
+    const isTxLinked = alloc.id && alloc.id.startsWith('alloc_tx_');
+    const isClosedGoalDeposit = historyGoal.status === 'CLOSED' && alloc.type === 'DEPOSIT';
+
+    if (isClosedGoalDeposit) {
+      // Deleting a deposit of a CLOSED goal
+      
+      // Find the latest withdrawal allocation to delete (the closing one)
+      const withdrawals = (historyGoal.allocations || []).filter(a => a.type === 'WITHDRAW');
+      const lastWithdrawal = [...withdrawals].sort((a, b) => {
+        const dateCompare = b.date.localeCompare(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        return (b.timestamp || 0) - (a.timestamp || 0);
+      })[0];
+
+      // Filter out the deleted deposit and the closing withdrawal allocation
+      const remainingAllocations = (historyGoal.allocations || []).filter(a => {
+        if (a.id === alloc.id) return false;
+        if (lastWithdrawal && a.id === lastWithdrawal.id) return false;
+        return true;
+      });
+
+      const remainingDeposits = remainingAllocations.filter(a => a.type === 'DEPOSIT');
+      const remainingWithdrawals = remainingAllocations.filter(a => a.type === 'WITHDRAW');
+      const totalDeposited = remainingDeposits.reduce((sum, a) => sum + (a.amount || 0), 0);
+      const totalWithdrawn = remainingWithdrawals.reduce((sum, a) => sum + (a.amount || 0), 0);
+      const newCurrent = totalDeposited - totalWithdrawn;
+      const newStatus = 'IN_PROGRESS'; // Goal re-opens!
+
+      if (isTxLinked) {
+        const txId = alloc.id.substring('alloc_tx_'.length);
+        deleteTransaction(txId, true);
+      } else {
+        // Just update manual allocations inside context
+        updateGoal(historyGoal.id, {
+          currentAmount: newCurrent,
+          status: newStatus,
+          allocations: remainingAllocations,
+        });
+      }
+
+      setHistoryGoal(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          currentAmount: newCurrent,
+          status: newStatus,
+          allocations: remainingAllocations,
+        };
+      });
+    } else {
+      if (isTxLinked) {
+        const txId = alloc.id.substring('alloc_tx_'.length);
+        deleteTransaction(txId, true);
+        
+        setHistoryGoal(prev => {
+          if (!prev) return null;
+          const isWithdraw = alloc.type === 'WITHDRAW';
+          const delta = isWithdraw ? -alloc.amount : alloc.amount;
+          const newCurrent = Math.max(0, prev.currentAmount - delta);
+          const updatedAllocations = (prev.allocations || []).filter(a => a.id !== alloc.id);
+          const isCompleted = newCurrent >= prev.targetAmount;
+          return {
+            ...prev,
+            currentAmount: newCurrent,
+            status: isCompleted ? 'COMPLETED' : (newCurrent <= 0.01 ? 'CLOSED' : 'IN_PROGRESS'),
+            allocations: updatedAllocations,
+          };
+        });
+      } else {
+        const isWithdraw = alloc.type === 'WITHDRAW';
+        const delta = isWithdraw ? -alloc.amount : alloc.amount;
+        const newCurrent = Math.max(0, historyGoal.currentAmount - delta);
+        const updatedAllocations = (historyGoal.allocations || []).filter(a => a.id !== alloc.id);
+        const isCompleted = newCurrent >= historyGoal.targetAmount;
+        
+        updateGoal(historyGoal.id, {
+          currentAmount: newCurrent,
+          status: isCompleted ? 'COMPLETED' : (newCurrent <= 0.01 ? 'CLOSED' : 'IN_PROGRESS'),
+          allocations: updatedAllocations,
+        });
+        
+        setHistoryGoal(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            currentAmount: newCurrent,
+            status: isCompleted ? 'COMPLETED' : (newCurrent <= 0.01 ? 'CLOSED' : 'IN_PROGRESS'),
+            allocations: updatedAllocations,
+          };
+        });
+      }
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -323,7 +461,7 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
               />
             </div>
             <span className="text-[9px] sm:text-[11px] text-slate-400 mt-1 block truncate">
-              {activeGoals.filter(g => g.status === 'COMPLETED').length} done
+              {activeGoals.filter(g => g.status === 'COMPLETED' || g.status === 'CLOSED').length} done
             </span>
           </div>
         </div>
@@ -332,38 +470,72 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Action Row */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
-              <button
-                onClick={() => setActiveTab('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  activeTab === 'all'
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                All ({activeGoals.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('in_progress')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  activeTab === 'in_progress'
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                In Progress ({activeGoals.filter(g => g.status !== 'COMPLETED').length})
-              </button>
-              <button
-                onClick={() => setActiveTab('completed')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  activeTab === 'completed'
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                }`}
-              >
-                Completed ({activeGoals.filter(g => g.status === 'COMPLETED').length})
-              </button>
-            </div>
+            {(() => {
+              const hasInProgress = activeGoals.some(g => g.status !== 'COMPLETED' && g.status !== 'CLOSED');
+              const hasCompleted = activeGoals.some(g => g.status === 'COMPLETED');
+              const hasClosed = activeGoals.some(g => g.status === 'CLOSED');
+
+              if (hasInProgress || hasCompleted || hasClosed) {
+                return (
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+                    <button
+                      onClick={() => setActiveTab('all')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        activeTab === 'all'
+                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm font-semibold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                    >
+                      All ({activeGoals.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('in_progress')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        activeTab === 'in_progress'
+                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm font-semibold'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                      }`}
+                    >
+                      In Progress ({activeGoals.filter(g => g.status !== 'COMPLETED' && g.status !== 'CLOSED').length})
+                    </button>
+                    {hasCompleted && (
+                      <button
+                        onClick={() => setActiveTab('completed')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          activeTab === 'completed'
+                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm font-semibold'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                        }`}
+                      >
+                        Completed ({activeGoals.filter(g => g.status === 'COMPLETED').length})
+                      </button>
+                    )}
+                    {hasClosed && (
+                      <button
+                        onClick={() => setActiveTab('closed')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          activeTab === 'closed'
+                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm font-semibold'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                        }`}
+                      >
+                        Closed ({activeGoals.filter(g => g.status === 'CLOSED').length})
+                      </button>
+                    )}
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+                    <button
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
+                    >
+                      In Progress (0)
+                    </button>
+                  </div>
+                );
+              }
+            })()}
 
             <button
               onClick={() => handleOpenCreate()}
@@ -542,23 +714,36 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
                     {/* Action Toolbar */}
                     <div className="flex items-center justify-between mt-3 pt-1">
                       <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => handleOpenAllocate(goal, 'DEPOSIT')}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-semibold transition-colors"
-                          title="Allocate money to this goal"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          Deposit
-                        </button>
-                        <button
-                          onClick={() => handleOpenAllocate(goal, 'WITHDRAW')}
-                          disabled={goal.currentAmount <= 0}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="Withdraw from goal"
-                        >
-                          <ArrowDownLeft className="w-3.5 h-3.5" />
-                          Withdraw
-                        </button>
+                        {goal.status === 'CLOSED' ? (
+                          <button
+                            onClick={() => handleOpenReopenDialog(goal)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors"
+                            title="Re-open this closed goal"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5 opacity-90 animate-spin-once" />
+                            Re-open Goal
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleOpenAllocate(goal, 'DEPOSIT')}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-lg text-xs font-semibold transition-colors"
+                              title="Allocate money to this goal"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Deposit
+                            </button>
+                            <button
+                              onClick={() => handleOpenAllocate(goal, 'WITHDRAW')}
+                              disabled={goal.currentAmount <= 0}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              title="Withdraw from goal"
+                            >
+                              <ArrowDownLeft className="w-3.5 h-3.5" />
+                              Withdraw
+                            </button>
+                          </>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1">
@@ -570,7 +755,7 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => deleteGoal(goal.id)}
+                          onClick={() => setDeleteConfirmGoal(goal)}
                           className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors"
                           title="Delete Goal"
                         >
@@ -673,24 +858,12 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
                   />
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Color Accent
-                  </label>
-                  <div className="flex items-center gap-1.5 pt-1.5 flex-wrap">
-                    {COLOR_OPTIONS.map(c => (
-                      <button
-                        key={c.value}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, color: c.value })}
-                        className={`w-6 h-6 rounded-full ${c.bg} flex items-center justify-center transition-transform ${
-                          formData.color === c.value ? 'scale-125 ring-2 ring-slate-900 dark:ring-white ring-offset-2' : ''
-                        }`}
-                      >
-                        {formData.color === c.value && <Check className="w-3 h-3 text-white" />}
-                      </button>
-                    ))}
-                  </div>
+                <div className="sm:col-span-2">
+                  <ThemeColorPicker
+                    value={formData.color}
+                    onChange={c => setFormData({ ...formData, color: c })}
+                    label="Color Accent & Theme"
+                  />
                 </div>
               </div>
 
@@ -797,6 +970,38 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
                   onChange={e => setAllocationAmount(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-base font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+                
+                {/* Quick percentage selector buttons */}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {(() => {
+                    const baseAmount = allocationType === 'DEPOSIT'
+                      ? (Math.max(0, allocatingGoal.targetAmount - allocatingGoal.currentAmount) > 0 
+                          ? Math.max(0, allocatingGoal.targetAmount - allocatingGoal.currentAmount) 
+                          : allocatingGoal.targetAmount)
+                      : allocatingGoal.currentAmount;
+
+                    if (baseAmount <= 0) return null;
+
+                    const percentages = [
+                      { label: '25%', value: Math.round(baseAmount * 0.25) },
+                      { label: '50%', value: Math.round(baseAmount * 0.50) },
+                      { label: '75%', value: Math.round(baseAmount * 0.75) },
+                      { label: allocationType === 'DEPOSIT' ? '100% (Target)' : '100% (Full)', value: Math.round(baseAmount) }
+                    ];
+
+                    return percentages.map(pct => (
+                      <button
+                        key={pct.label}
+                        type="button"
+                        onClick={() => setAllocationAmount(pct.value.toString())}
+                        className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-800 text-slate-700 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors"
+                      >
+                        {pct.label} ({formatINR(pct.value)})
+                      </button>
+                    ));
+                  })()}
+                </div>
+
                 {allocationType === 'WITHDRAW' && (
                   <span className="text-[11px] text-slate-400 mt-1 block">
                     Available in goal: {formatINR(allocatingGoal.currentAmount)}
@@ -917,12 +1122,25 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
                       </div>
                     </div>
 
-                    <div
-                      className={`text-xs font-bold ${
-                        alloc.type === 'DEPOSIT' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
-                      }`}
-                    >
-                      {alloc.type === 'DEPOSIT' ? '+' : '-'}{formatINR(alloc.amount)}
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`text-xs font-bold ${
+                          alloc.type === 'DEPOSIT' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                        }`}
+                      >
+                        {alloc.type === 'DEPOSIT' ? '+' : '-'}{formatINR(alloc.amount)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteAllocation(alloc);
+                        }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                        title="Delete this allocation"
+                      >
+                        <Trash2 size={12} className="stroke-[2.5]" />
+                      </button>
                     </div>
                   </div>
                 ))
@@ -940,6 +1158,170 @@ export const GoalManagementModal: React.FC<GoalManagementModalProps> = ({ isOpen
           </div>
         </div>
       )}
+
+      {/* MANUAL RE-OPEN MODAL */}
+      {reopeningGoal && (() => {
+        const withdrawals = (reopeningGoal.allocations || []).filter(a => a.type === 'WITHDRAW');
+        const lastWithdrawal = [...withdrawals].sort((a, b) => {
+          const dateCompare = b.date.localeCompare(a.date);
+          if (dateCompare !== 0) return dateCompare;
+          return (b.timestamp || 0) - (a.timestamp || 0);
+        })[0];
+
+        return (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl max-h-[85vh] flex flex-col">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 mb-4 animate-in slide-in-from-top-2 duration-200">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                    <RefreshCw className="w-4 h-4 animate-spin" style={{ animationIterationCount: 1, animationDuration: '0.8s' }} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">Re-open Goal</h3>
+                    <span className="text-[11px] text-slate-500">{reopeningGoal.name}</span>
+                  </div>
+                </div>
+                 <button
+                  onClick={() => {
+                    setReopeningGoal(null);
+                  }}
+                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="mb-4 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100/60 dark:border-indigo-900/40 rounded-2xl p-4 text-xs text-indigo-900 dark:text-indigo-200 space-y-2 animate-in fade-in duration-300">
+                <p className="font-semibold flex items-center gap-1.5 text-indigo-800 dark:text-indigo-300">
+                  <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  Manual Re-opening Confirmation
+                </p>
+                <p className="leading-relaxed">
+                  To re-open this completed/closed goal, only the latest withdrawal transaction that closed the goal will be deleted. All other deposits and historical records will remain fully intact.
+                </p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 max-h-[40vh] animate-in fade-in duration-300">
+                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Goal Transactions Ledger
+                </div>
+
+                {(!reopeningGoal.allocations || reopeningGoal.allocations.length === 0) ? (
+                  <div className="text-center py-8 text-xs text-slate-400">
+                    No transactions associated with this goal.
+                  </div>
+                ) : (
+                  reopeningGoal.allocations.map((alloc, idx) => {
+                    const isLastWithdrawal = lastWithdrawal && alloc.id === lastWithdrawal.id;
+
+                    return (
+                      <div
+                        key={`reopen_alloc_${alloc.id || 'ra'}_${idx}`}
+                        className={`p-3 border rounded-xl flex items-center justify-between transition-all ${
+                          isLastWithdrawal
+                            ? 'bg-rose-50/30 dark:bg-rose-950/10 border-rose-100 dark:border-rose-950/40 opacity-90'
+                            : 'bg-slate-50 dark:bg-slate-850 border-slate-200 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          {isLastWithdrawal ? (
+                            <div className="flex items-center justify-center w-5 h-5 rounded-md bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 shrink-0">
+                              <X className="w-3.5 h-3.5" />
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center w-5 h-5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 shrink-0">
+                              <Check className="w-3.5 h-3.5" />
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                {alloc.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'}
+                              </span>
+                              {isLastWithdrawal ? (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 uppercase tracking-wider shrink-0 animate-pulse">
+                                  Will Be Deleted
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 uppercase tracking-wider shrink-0">
+                                  Will Be Kept
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
+                              <span>{alloc.date}</span>
+                              {alloc.notes && <span className="truncate">• {alloc.notes}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right ml-4 shrink-0">
+                          <div
+                            className={`text-xs font-bold ${
+                              isLastWithdrawal
+                                ? 'text-rose-600 dark:text-rose-400 line-through'
+                                : alloc.type === 'DEPOSIT'
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-amber-600 dark:text-amber-400'
+                            }`}
+                          >
+                            {alloc.type === 'DEPOSIT' ? '+' : '-'}{formatINR(alloc.amount)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 mt-4 flex items-center justify-between gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReopeningGoal(null);
+                  }}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmReopen}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Confirm & Re-open Goal
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      {/* Delete Confirmation Modal */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(deleteConfirmGoal)}
+        onClose={() => setDeleteConfirmGoal(null)}
+        onConfirm={() => {
+          if (deleteConfirmGoal) {
+            deleteGoal(deleteConfirmGoal.id);
+            setDeleteConfirmGoal(null);
+          }
+        }}
+        title="Delete Savings Goal?"
+        description="Are you sure you want to delete this savings goal? You can restore it anytime from More → Trash Bin."
+        itemDetails={
+          deleteConfirmGoal
+            ? {
+                title: deleteConfirmGoal.name,
+                amount: `${formatINR(deleteConfirmGoal.currentAmount)} / ${formatINR(deleteConfirmGoal.targetAmount)}`,
+                subtitle: deleteConfirmGoal.categoryName || 'Savings Goal',
+                badge: deleteConfirmGoal.isCompleted ? 'Completed' : 'In Progress',
+              }
+            : undefined
+        }
+        confirmLabel="Delete Goal"
+      />
     </div>
   );
 };

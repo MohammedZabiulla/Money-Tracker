@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { formatINR, formatCompactINR, format12HourTime } from '../../lib/currency';
 import { IconHelper, Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
-import { Transaction, TransactionType, Account, CreditCard } from '../../types';
+import { Transaction, TransactionType, Account, CreditCard, DebtRecord } from '../../types';
 import { calculateMonthlyCommitment, formatDueBadge } from '../../lib/recurringEngine';
 import { RecurringManagementModal } from '../recurring/RecurringManagementModal';
 import { SubscriptionManagementModal } from '../subscriptions/SubscriptionManagementModal';
@@ -15,6 +15,7 @@ import { CategoryTransactionsModal } from '../categories/CategoryTransactionsMod
 import { ArrangeAccountsModal } from '../accounts/ArrangeAccountsModal';
 import { ArrangeCardsModal } from '../accounts/ArrangeCardsModal';
 import { CARD_THEMES, INDIAN_BANKS, getBankTheme, BANK_ACCOUNT_THEMES } from '../../lib/constants';
+import { getThemedCardStyle } from '../../lib/colorPalettes';
 import { NetworkLogo } from '../common/CardVisual';
 import {
   ArrowDownLeft,
@@ -71,7 +72,7 @@ interface HomeDashboardProps {
   onNavigateTab: (tab: string) => void;
 }
 
-export const HomeDashboard: React.FC<HomeDashboardProps> = ({
+export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
   initialSubtab = 'overview',
   onOpenAdd,
   onSelectTransaction,
@@ -108,8 +109,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [showInvestmentModal, setShowInvestmentModal] = useState(false);
   const [showLentBorrowedModal, setShowLentBorrowedModal] = useState(false);
+  const [lentBorrowedModalInitialTab, setLentBorrowedModalInitialTab] = useState<'ALL' | 'LENT' | 'BORROWED' | 'SETTLED' | 'ADD'>('ALL');
+  const [lentBorrowedSettlingDebt, setLentBorrowedSettlingDebt] = useState<DebtRecord | null>(null);
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [financialTab, setFinancialTab] = useState<'GOALS' | 'INVESTMENTS' | 'DEBTS' | 'LOANS'>('GOALS');
+  const [commitmentTab, setCommitmentTab] = useState<'RECURRING' | 'SUBSCRIPTIONS'>('RECURRING');
   const [recurringModalInitialCreate, setRecurringModalInitialCreate] = useState(false);
   const [statementAccount, setStatementAccount] = useState<Account | null>(null);
   const [statementCard, setStatementCard] = useState<CreditCard | null>(null);
@@ -122,9 +126,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   } | null>(null);
 
   // Non-deleted financial suite items
-  const nonDeletedGoals = useMemo(() => (goals || []).filter(g => !g.isDeleted), [goals]);
+  const nonDeletedGoals = useMemo(() => (goals || []).filter(g => !g.isDeleted && g.status !== 'CLOSED'), [goals]);
   const nonDeletedInvestments = useMemo(() => (investments || []).filter(i => !i.isDeleted), [investments]);
-  const nonDeletedDebts = useMemo(() => (debts || []).filter(d => !d.isDeleted), [debts]);
+  const activeDebts = useMemo(() => (debts || []).filter(d => !d.isDeleted && !d.isSettled && (d.remainingAmount === undefined || d.remainingAmount > 0)), [debts]);
+  const settledDebtsCount = useMemo(() => (debts || []).filter(d => !d.isDeleted && (d.isSettled || (d.remainingAmount !== undefined && d.remainingAmount <= 0))).length, [debts]);
   const nonDeletedLoans = useMemo(() => (loans || []).filter(l => !l.isDeleted), [loans]);
 
   // Filter & Sort State for My Accounts & Cards Widget
@@ -380,8 +385,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </button>
       </div>
 
-      {activeView === 'overview' ? (
-        <>
+      {activeView === 'overview' && (
+        <div className="space-y-4">
           {/* Friendly Motivation Banner */}
           <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/5 dark:from-emerald-950/40 dark:to-teal-950/20 border border-emerald-500/20 dark:border-emerald-900/50 rounded-2xl p-3 flex items-center justify-between shadow-xs">
             <div className="flex items-center space-x-2">
@@ -912,7 +917,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 }`}
               >
                 <HandCoins size={13} className="text-teal-500" />
-                <span>Lent/Borrowed ({nonDeletedDebts.length})</span>
+                <span>Lent/Borrowed ({activeDebts.length})</span>
               </button>
               <button
                 onClick={() => setFinancialTab('LOANS')}
@@ -929,34 +934,40 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
             {/* Cards for Selected Tab */}
             {financialTab === 'GOALS' && (
-              nonDeletedGoals.length === 0 ? (
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-dashed border-slate-200 dark:border-slate-700 text-center">
-                  <p className="text-xs text-slate-500">No savings goals created yet. Tap Manage to add one.</p>
-                </div>
-              ) : (
+              nonDeletedGoals.length === 0 ? (<div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-2">
+                  <p className="text-xs text-slate-500">No savings goals created yet.</p>
+                  <div className="flex justify-center">
+                    <button onClick={() => setShowGoalModal(true)} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition-all inline-flex items-center space-x-1.5 shadow-xs cursor-pointer active:scale-95">
+                      <Plus size={13} />
+                      <span>Record Savings Goal</span>
+                    </button>
+                  </div>
+                </div>) : (
                 <div className="flex space-x-2.5 overflow-x-auto pb-2 pt-1 no-scrollbar -mx-1 px-1">
                   {nonDeletedGoals.map((g, idx) => {
                     const progress = Math.min(100, Math.round((g.currentAmount / Math.max(1, g.targetAmount)) * 100));
+                    const cardStyle = getThemedCardStyle(g.color, '#10B981');
                     return (
                       <div
                         key={`dash_goal_${g.id}_${idx}`}
                         onClick={() => setShowGoalModal(true)}
-                        className="shrink-0 w-52 p-3.5 rounded-2xl bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 text-white border border-amber-400/30 shadow-md cursor-pointer hover:shadow-xl transition-all flex flex-col justify-between min-h-[130px] relative overflow-hidden"
+                        style={cardStyle}
+                        className="shrink-0 w-52 p-3.5 rounded-2xl text-white border shadow-md cursor-pointer hover:shadow-xl transition-all flex flex-col justify-between min-h-[130px] relative overflow-hidden"
                       >
                         <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-white/10 blur-lg pointer-events-none" />
                         <div className="relative z-10 flex items-center justify-between">
-                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-black/30 text-amber-200">
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-black/30 text-white/90">
                             {g.category || 'GOAL'}
                           </span>
-                          <span className="text-[10px] font-bold text-amber-100">{progress}%</span>
+                          <span className="text-[10px] font-bold text-white/90">{progress}%</span>
                         </div>
                         <div className="mt-2 relative z-10">
                           <h4 className="text-xs font-bold text-white truncate">{g.name}</h4>
-                          <p className="text-[10px] text-amber-100/80 mt-0.5">Target: {formatINR(g.targetAmount)}</p>
+                          <p className="text-[10px] text-white/80 mt-0.5">Target: {formatINR(g.targetAmount)}</p>
                         </div>
                         <div className="mt-2 pt-2 border-t border-white/20 relative z-10 flex items-center justify-between">
                           <div>
-                            <span className="text-[8.5px] uppercase font-semibold text-amber-200">Saved</span>
+                            <span className="text-[8.5px] uppercase font-semibold text-white/70">Saved</span>
                             <span className="text-xs font-extrabold text-white">{formatINR(g.currentAmount)}</span>
                           </div>
                           <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-lg font-bold">{g.status}</span>
@@ -964,30 +975,37 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       </div>
                     );
                   })}
+                  <div onClick={() => setShowGoalModal(true)} className="shrink-0 w-32 p-3.5 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-all flex flex-col items-center justify-center min-h-[130px]"><Plus size={24} className="mb-2 text-slate-400" /><span className="text-xs font-bold text-slate-600 dark:text-slate-300 text-center">Record Goal</span></div>
                 </div>
               )
             )}
 
             {financialTab === 'INVESTMENTS' && (
-              nonDeletedInvestments.length === 0 ? (
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-dashed border-slate-200 dark:border-slate-700 text-center">
-                  <p className="text-xs text-slate-500">No investments added yet. Tap Manage to add assets.</p>
-                </div>
-              ) : (
+              nonDeletedInvestments.length === 0 ? (<div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-2">
+                  <p className="text-xs text-slate-500">No investments added yet.</p>
+                  <div className="flex justify-center">
+                    <button onClick={() => setShowInvestmentModal(true)} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all inline-flex items-center space-x-1.5 shadow-xs cursor-pointer active:scale-95">
+                      <Plus size={13} />
+                      <span>Record Investment</span>
+                    </button>
+                  </div>
+                </div>) : (
                 <div className="flex space-x-2.5 overflow-x-auto pb-2 pt-1 no-scrollbar -mx-1 px-1">
                   {nonDeletedInvestments.map((inv, idx) => {
                     const gain = inv.currentValue - inv.investedAmount;
                     const gainPct = inv.investedAmount > 0 ? ((gain / inv.investedAmount) * 100).toFixed(1) : '0';
                     const isProfit = gain >= 0;
+                    const cardStyle = getThemedCardStyle(inv.color, '#059669');
                     return (
                       <div
                         key={`dash_inv_${inv.id}_${idx}`}
                         onClick={() => setShowInvestmentModal(true)}
-                        className="shrink-0 w-52 p-3.5 rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 text-white border border-emerald-500/30 shadow-md cursor-pointer hover:shadow-xl transition-all flex flex-col justify-between min-h-[130px] relative overflow-hidden"
+                        style={cardStyle}
+                        className="shrink-0 w-52 p-3.5 rounded-2xl text-white border shadow-md cursor-pointer hover:shadow-xl transition-all flex flex-col justify-between min-h-[130px] relative overflow-hidden"
                       >
                         <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-white/10 blur-lg pointer-events-none" />
                         <div className="relative z-10 flex items-center justify-between">
-                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-black/30 text-emerald-200">
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-black/30 text-white/90">
                             {inv.category}
                           </span>
                           <span className={`text-[10px] font-bold ${isProfit ? 'text-emerald-300' : 'text-rose-300'}`}>
@@ -996,11 +1014,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         </div>
                         <div className="mt-2 relative z-10">
                           <h4 className="text-xs font-bold text-white truncate">{inv.name}</h4>
-                          <p className="text-[10px] text-slate-300 mt-0.5">Invested: {formatINR(inv.investedAmount)}</p>
+                          <p className="text-[10px] text-white/80 mt-0.5">Invested: {formatINR(inv.investedAmount)}</p>
                         </div>
                         <div className="mt-2 pt-2 border-t border-white/20 relative z-10 flex items-center justify-between">
                           <div>
-                            <span className="text-[8.5px] uppercase font-semibold text-slate-300">Current Value</span>
+                            <span className="text-[8.5px] uppercase font-semibold text-white/70">Current Value</span>
                             <span className="text-xs font-extrabold text-white">{formatINR(inv.currentValue)}</span>
                           </div>
                           <span className={`text-[10px] px-2 py-0.5 rounded-lg font-bold ${isProfit ? 'bg-emerald-500/30 text-emerald-200' : 'bg-rose-500/30 text-rose-200'}`}>
@@ -1010,249 +1028,412 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       </div>
                     );
                   })}
+                  <div onClick={() => setShowInvestmentModal(true)} className="shrink-0 w-32 p-3.5 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-all flex flex-col items-center justify-center min-h-[130px]"><Plus size={24} className="mb-2 text-slate-400" /><span className="text-xs font-bold text-slate-600 dark:text-slate-300 text-center">Record Investment</span></div>
                 </div>
               )
             )}
 
             {financialTab === 'DEBTS' && (
-              nonDeletedDebts.length === 0 ? (
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-dashed border-slate-200 dark:border-slate-700 text-center">
-                  <p className="text-xs text-slate-500">No lent or borrowed records found. Tap Manage to add.</p>
+              activeDebts.length === 0 ? (
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-2">
+                  <p className="text-xs text-slate-500">
+                    {settledDebtsCount > 0
+                      ? 'All lent & borrowed records are currently settled!'
+                      : 'No active lent or borrowed records found.'}
+                  </p>
+                  <div className="flex items-center justify-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLentBorrowedModalInitialTab('ADD');
+                        setLentBorrowedSettlingDebt(null);
+                        setShowLentBorrowedModal(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-all inline-flex items-center space-x-1.5 shadow-xs cursor-pointer active:scale-95"
+                    >
+                      <Plus size={13} />
+                      <span>Record Lent / Borrow</span>
+                    </button>
+                    {settledDebtsCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLentBorrowedModalInitialTab('SETTLED');
+                          setLentBorrowedSettlingDebt(null);
+                          setShowLentBorrowedModal(true);
+                        }}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-all inline-flex items-center space-x-1.5 cursor-pointer active:scale-95"
+                      >
+                        <span>Settled History ({settledDebtsCount})</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
-                <div className="flex space-x-2.5 overflow-x-auto pb-2 pt-1 no-scrollbar -mx-1 px-1">
-                  {nonDeletedDebts.map((d, idx) => {
+                <div className="flex space-x-2.5 overflow-x-auto pb-2 pt-1 no-scrollbar -mx-1 px-1 items-stretch">
+                  {activeDebts.map((d, idx) => {
                     const isLent = d.type === 'LENT';
+                    const defaultDebtColor = isLent ? '#0D9488' : '#4F46E5';
+                    const cardStyle = getThemedCardStyle(d.color, defaultDebtColor);
                     return (
                       <div
                         key={`dash_debt_${d.id}_${idx}`}
-                        onClick={() => setShowLentBorrowedModal(true)}
-                        className={`shrink-0 w-52 p-3.5 rounded-2xl bg-gradient-to-br ${isLent ? 'from-teal-600 to-slate-900' : 'from-indigo-600 to-slate-900'} text-white border border-white/20 shadow-md cursor-pointer hover:shadow-xl transition-all flex flex-col justify-between min-h-[130px] relative overflow-hidden`}
+                        onClick={() => {
+                          setLentBorrowedModalInitialTab(isLent ? 'LENT' : 'BORROWED');
+                          setLentBorrowedSettlingDebt(null);
+                          setShowLentBorrowedModal(true);
+                        }}
+                        style={cardStyle}
+                        className="shrink-0 w-56 sm:w-60 p-3.5 rounded-2xl text-white border shadow-md cursor-pointer hover:shadow-xl transition-all flex flex-col justify-between min-h-[142px] relative overflow-hidden group"
                       >
                         <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-white/10 blur-lg pointer-events-none" />
+                        
+                        {/* Header Tag & Status */}
                         <div className="relative z-10 flex items-center justify-between">
-                          <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-black/30 ${isLent ? 'text-teal-300' : 'text-indigo-300'}`}>
-                            {d.type}
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-lg bg-black/30 backdrop-blur-xs ${isLent ? 'text-teal-300' : 'text-indigo-300'}`}>
+                            {isLent ? '💸 Lent' : '🤝 Borrowed'}
                           </span>
-                          <span className="text-[10px] font-bold text-slate-200">{d.status}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white/20 text-slate-100">
+                            {d.status || 'Active'}
+                          </span>
                         </div>
+
+                        {/* Person Name & Total */}
                         <div className="mt-2 relative z-10">
                           <h4 className="text-xs font-bold text-white truncate">{d.personName}</h4>
-                          <p className="text-[10px] text-slate-300 mt-0.5">Total: {formatINR(d.amount)}</p>
-                        </div>
-                        <div className="mt-2 pt-2 border-t border-white/20 relative z-10 flex items-center justify-between">
-                          <div>
-                            <span className="text-[8.5px] uppercase font-semibold text-slate-300">Remaining</span>
-                            <span className="text-xs font-extrabold text-white">{formatINR(d.remainingAmount)}</span>
+                          <div className="flex items-center justify-between mt-0.5 text-[10px] text-slate-300">
+                            <span>Total: {formatINR(d.amount)}</span>
+                            {d.dueDate && (
+                              <span className="text-[9.5px] text-slate-300/90">
+                                Due: {new Date(d.dueDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
+                              </span>
+                            )}
                           </div>
-                          <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-lg font-bold">
-                            {d.dueDate ? new Date(d.dueDate).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'No Due Date'}
-                          </span>
+                        </div>
+
+                        {/* Footer with Balance & Interactive Action Button */}
+                        <div className="mt-2.5 pt-2 border-t border-white/20 relative z-10 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-[8.5px] uppercase font-semibold text-slate-300 block leading-tight">
+                              Pending
+                            </span>
+                            <span className="text-xs font-extrabold text-white">
+                              {formatINR(d.remainingAmount ?? d.amount)}
+                            </span>
+                          </div>
+
+                          {/* Button on the Lent Card */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLentBorrowedModalInitialTab(isLent ? 'LENT' : 'BORROWED');
+                              setLentBorrowedSettlingDebt(d);
+                              setShowLentBorrowedModal(true);
+                            }}
+                            className={`px-2.5 py-1 rounded-xl text-[10.5px] font-bold transition-all flex items-center space-x-1 shrink-0 shadow-xs cursor-pointer active:scale-95 ${
+                              isLent
+                                ? 'bg-teal-300 hover:bg-teal-200 text-slate-950 font-black shadow-md'
+                                : 'bg-indigo-300 hover:bg-indigo-200 text-slate-950 font-black shadow-md'
+                            }`}
+                          >
+                            <span>{isLent ? 'Settle / Return' : 'Settle / Pay'}</span>
+                            <ArrowRight size={11} className="stroke-[2.5]" />
+                          </button>
                         </div>
                       </div>
                     );
                   })}
+
+                  {/* Add New Quick Card */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLentBorrowedModalInitialTab('ADD');
+                      setLentBorrowedSettlingDebt(null);
+                      setShowLentBorrowedModal(true);
+                    }}
+                    className="shrink-0 w-28 sm:w-32 p-3.5 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-teal-500 dark:hover:border-teal-400 bg-slate-50/60 dark:bg-slate-850/60 text-slate-600 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 transition-all flex flex-col items-center justify-center space-y-1.5 cursor-pointer group"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-teal-50 dark:bg-teal-950/60 text-teal-600 dark:text-teal-400 group-hover:scale-110 transition-transform flex items-center justify-center">
+                      <Plus size={16} />
+                    </div>
+                    <span className="text-[11px] font-bold text-center leading-tight">Add Entry</span>
+                  </button>
                 </div>
               )
             )}
 
             {financialTab === 'LOANS' && (
-              nonDeletedLoans.length === 0 ? (
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-dashed border-slate-200 dark:border-slate-700 text-center">
-                  <p className="text-xs text-slate-500">No loans or EMIs logged. Tap Manage to add loans.</p>
-                </div>
-              ) : (
+              nonDeletedLoans.length === 0 ? (<div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-2">
+                  <p className="text-xs text-slate-500">No loans or EMIs added yet.</p>
+                  <div className="flex justify-center">
+                    <button onClick={() => setShowLoanModal(true)} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-700 hover:bg-amber-600 text-white transition-all inline-flex items-center space-x-1.5 shadow-xs cursor-pointer active:scale-95">
+                      <Plus size={13} />
+                      <span>Record Loan & EMI</span>
+                    </button>
+                  </div>
+                </div>) : (
                 <div className="flex space-x-2.5 overflow-x-auto pb-2 pt-1 no-scrollbar -mx-1 px-1">
-                  {nonDeletedLoans.map((l, idx) => (
-                    <div
-                      key={`dash_loan_${l.id}_${idx}`}
-                      onClick={() => setShowLoanModal(true)}
-                      className="shrink-0 w-52 p-3.5 rounded-2xl bg-gradient-to-br from-amber-700 via-slate-800 to-slate-900 text-white border border-amber-500/30 shadow-md cursor-pointer hover:shadow-xl transition-all flex flex-col justify-between min-h-[130px] relative overflow-hidden"
-                    >
-                      <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-white/10 blur-lg pointer-events-none" />
-                      <div className="relative z-10 flex items-center justify-between">
-                        <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-black/30 text-amber-300">
-                          {l.lenderName || 'LOAN'}
-                        </span>
-                        <span className="text-[10px] font-bold text-amber-200">{l.interestRate}% p.a.</span>
-                      </div>
-                      <div className="mt-2 relative z-10">
-                        <h4 className="text-xs font-bold text-white truncate">{l.name}</h4>
-                        <p className="text-[10px] text-slate-300 mt-0.5">EMI: {formatINR(l.emiAmount)}/mo</p>
-                      </div>
-                      <div className="mt-2 pt-2 border-t border-white/20 relative z-10 flex items-center justify-between">
-                        <div>
-                          <span className="text-[8.5px] uppercase font-semibold text-slate-300">Outstanding</span>
-                          <span className="text-xs font-extrabold text-amber-300">{formatINR(l.outstandingPrincipal)}</span>
+                  {nonDeletedLoans.map((l, idx) => {
+                    const cardStyle = getThemedCardStyle(l.color, '#B45309');
+                    return (
+                      <div
+                        key={`dash_loan_${l.id}_${idx}`}
+                        onClick={() => setShowLoanModal(true)}
+                        style={cardStyle}
+                        className="shrink-0 w-52 p-3.5 rounded-2xl text-white border shadow-md cursor-pointer hover:shadow-xl transition-all flex flex-col justify-between min-h-[130px] relative overflow-hidden"
+                      >
+                        <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-white/10 blur-lg pointer-events-none" />
+                        <div className="relative z-10 flex items-center justify-between">
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-black/30 text-white/90">
+                            {l.lenderName || 'LOAN'}
+                          </span>
+                          <span className="text-[10px] font-bold text-white/90">{l.interestRate}% p.a.</span>
                         </div>
-                        <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-lg font-bold">Active</span>
+                        <div className="mt-2 relative z-10">
+                          <h4 className="text-xs font-bold text-white truncate">{l.name}</h4>
+                          <p className="text-[10px] text-white/80 mt-0.5">EMI: {formatINR(l.emiAmount)}/mo</p>
+                        </div>
+                        <div className="mt-2 pt-2 border-t border-white/20 relative z-10 flex items-center justify-between">
+                          <div>
+                            <span className="text-[8.5px] uppercase font-semibold text-white/70">Outstanding</span>
+                            <span className="text-xs font-extrabold text-white">{formatINR(l.outstandingPrincipal)}</span>
+                          </div>
+                          <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-lg font-bold">Active</span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
+                  <div onClick={() => setShowLoanModal(true)} className="shrink-0 w-32 p-3.5 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-all flex flex-col items-center justify-center min-h-[130px]"><Plus size={24} className="mb-2 text-slate-400" /><span className="text-xs font-bold text-slate-600 dark:text-slate-300 text-center">Record Loan</span></div>
                 </div>
               )
             )}
           </div>
 
           {/* Upcoming Recurring & Subscription Bills Section */}
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-4 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-4 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-3.5">
+            <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
-                  <Repeat size={16} />
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold shadow-2xs">
+                  {commitmentTab === 'RECURRING' ? <Repeat size={16} /> : <Layers size={16} />}
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                     Upcoming Recurring & Subscriptions
                   </h3>
-                  <p className="text-[11px] text-slate-500">
-                    {activeRecurringRules.length + activeSubscriptions.length} active commitments • {formatINR(monthlyCommitment)}/mo
-                  </p>
                 </div>
               </div>
-
-              <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex items-center space-x-1.5">
                 <button
                   onClick={() => {
-                    setRecurringModalInitialCreate(true);
-                    setShowRecurringModal(true);
+                    if (commitmentTab === 'RECURRING') {
+                      setRecurringModalInitialCreate(false);
+                      setShowRecurringModal(true);
+                    } else if (commitmentTab === 'SUBSCRIPTIONS') {
+                      setShowSubscriptionModal(true);
+                    }
                   }}
-                  className="px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center space-x-1 shadow-2xs transition-all cursor-pointer active:scale-95"
-                  title="Add new recurring bill"
+                  className="px-2.5 py-1 rounded-xl text-xs font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all flex items-center space-x-1 border border-indigo-200/60 dark:border-indigo-800/60 shadow-2xs cursor-pointer active:scale-95"
                 >
-                  <span>Add Recurring</span>
-                </button>
-                <button
-                  onClick={() => setShowSubscriptionModal(true)}
-                  className="px-2.5 py-1 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold flex items-center space-x-1 shadow-2xs transition-all cursor-pointer active:scale-95"
-                  title="Add new subscription"
-                >
-                  <span>Add Subscription</span>
-                </button>
-                <button
-                  onClick={() => setShowSubscriptionModal(true)}
-                  className="px-2 py-1 rounded-xl text-[11px] font-bold bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/60 transition-all flex items-center space-x-1 border border-violet-200/60 dark:border-indigo-800/60 shadow-2xs cursor-pointer active:scale-95"
-                  title="Manage Subscriptions"
-                >
-                  <Layers size={12} />
-                  <span>Subscriptions</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setRecurringModalInitialCreate(false);
-                    setShowRecurringModal(true);
-                  }}
-                  className="px-2 py-1 rounded-xl text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all flex items-center space-x-0.5 border border-indigo-200/60 dark:border-indigo-800/60 shadow-2xs cursor-pointer active:scale-95"
-                  title="Manage Recurring Bills"
-                >
-                  <span>Recurring</span>
-                  <ChevronRight size={12} />
+                  <span className="hidden sm:inline">Manage {commitmentTab === 'RECURRING' ? 'Recurring' : 'Subscriptions'}</span>
+                  <span className="sm:hidden">Manage</span>
+                  <ChevronRight size={13} />
                 </button>
               </div>
             </div>
 
-            {unifiedUpcomingList.length === 0 ? (
-              <div className="p-4 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-dashed border-indigo-200/70 dark:border-indigo-800/50 text-center">
-                <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-                  No upcoming recurring bills, SIPs, or subscriptions scheduled.
-                </p>
-                <div className="mt-3 flex items-center justify-center space-x-2">
-                  <button
-                    onClick={() => {
-                      setRecurringModalInitialCreate(true);
-                      setShowRecurringModal(true);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-xs inline-flex items-center space-x-1.5 cursor-pointer active:scale-95"
-                  >
-                    <span>Add Recurring</span>
-                  </button>
-                  <button
-                    onClick={() => setShowSubscriptionModal(true)}
-                    className="px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-xs inline-flex items-center space-x-1.5 cursor-pointer active:scale-95"
-                  >
-                    <span>Add Subscription</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {unifiedUpcomingList.map((item, idx) => {
-                  const cat = categories.find(c => c.id === item.categoryId);
-                  const isIncome = item.type === 'INCOME';
-                  const isInvest = item.type === 'INVESTMENT_CONTRIBUTION';
-                  const dueInfo = formatDueBadge(item.nextDueDate);
+            {/* Category Filter Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-slate-750 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700">
+              <button
+                onClick={() => setCommitmentTab('RECURRING')}
+                className={`flex-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+                  commitmentTab === 'RECURRING'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Repeat size={13} className="text-indigo-500" />
+                <span>Recurring ({activeRecurringRules.length})</span>
+              </button>
+              <button
+                onClick={() => setCommitmentTab('SUBSCRIPTIONS')}
+                className={`flex-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+                  commitmentTab === 'SUBSCRIPTIONS'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Layers size={13} className="text-violet-500" />
+                <span>Subscriptions ({activeSubscriptions.length})</span>
+              </button>
+            </div>
 
-                  return (
-                    <div
-                      key={`upc_item_${item.id}_${idx}`}
-                      className="p-3 rounded-2xl bg-slate-50/80 dark:bg-slate-850/80 border border-slate-200/60 dark:border-slate-750 flex items-center justify-between hover:bg-slate-100/70 dark:hover:bg-slate-800 transition-colors"
+            {commitmentTab === 'RECURRING' && (
+              unifiedUpcomingList.filter(i => !i.isSubscription).length === 0 ? (
+                <div className="p-4 rounded-2xl bg-indigo-50/40 dark:bg-indigo-950/20 border border-dashed border-indigo-200/70 dark:border-indigo-800/50 text-center space-y-2">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                    No upcoming recurring bills scheduled.
+                  </p>
+                  <div className="flex items-center justify-center space-x-2">
+                    <button
+                      onClick={() => {
+                        setRecurringModalInitialCreate(true);
+                        setShowRecurringModal(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-xs inline-flex items-center space-x-1.5 cursor-pointer active:scale-95"
                     >
-                      <div className="flex items-center space-x-2.5 min-w-0">
-                        <Category3DIcon
-                          name={item.icon || cat?.icon || (isIncome ? 'ArrowDownLeft' : isInvest ? 'TrendingUp' : 'Repeat')}
-                          categoryName={item.categoryName || cat?.name || item.name}
-                          color={item.color || cat?.color || (isIncome ? '#10b981' : isInvest ? '#059669' : '#6366f1')}
-                          size="sm"
-                          glow={false}
-                        />
-                        <div className="min-w-0">
-                          <div className="flex items-center space-x-1.5">
-                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                              {item.name}
-                            </p>
-                            {item.isSubscription && (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800">
-                                Sub
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center space-x-1.5 text-[10px] text-slate-500 mt-0.5">
-                            <span className="capitalize">{item.frequency.toLowerCase()}</span>
-                            <span>•</span>
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">
-                              {item.accountName || item.creditCardName || item.categoryName || 'General'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-3 shrink-0">
-                        <div className="text-right">
-                          <span
-                            className={`text-xs font-extrabold block ${
-                              isIncome
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : isInvest
-                                ? 'text-teal-600 dark:text-teal-400'
-                                : 'text-slate-900 dark:text-white'
-                            }`}
-                          >
-                            {isIncome ? `+${formatINR(item.amount)}` : formatINR(item.amount)}
+                      <Plus size={13} />
+                      <span>Record Recurring</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex space-x-2.5 overflow-x-auto pb-2 pt-1 no-scrollbar -mx-1 px-1 items-stretch">
+                  {unifiedUpcomingList.filter(i => !i.isSubscription).map((item, idx) => {
+                    const cat = categories.find(c => c.id === item.categoryId);
+                    const isIncome = item.type === 'INCOME';
+                    const isInvest = item.type === 'INVESTMENT_CONTRIBUTION';
+                    const dueInfo = formatDueBadge(item.nextDueDate);
+                    const cardStyle = getThemedCardStyle(item.color, '#6366F1');
+                    return (
+                      <div
+                        key={`dash_rec_${item.id}_${idx}`}
+                        onClick={() => {
+                          setRecurringModalInitialCreate(false);
+                          setShowRecurringModal(true);
+                        }}
+                        style={cardStyle}
+                        className="shrink-0 w-56 sm:w-60 p-3.5 rounded-2xl text-white border shadow-md cursor-pointer hover:shadow-xl transition-all flex flex-col justify-between min-h-[142px] relative overflow-hidden group"
+                      >
+                        <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-white/10 blur-lg pointer-events-none" />
+                        
+                        <div className="relative z-10 flex items-center justify-between">
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-lg bg-black/30 backdrop-blur-xs text-indigo-300">
+                            {item.frequency}
                           </span>
-                          <span
-                            className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${dueInfo.color}`}
-                          >
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white/20 ${dueInfo.color === 'border-rose-300 text-rose-700 dark:border-rose-500/50 dark:text-rose-400' ? 'text-rose-300' : 'text-slate-100'}`}>
                             {dueInfo.label}
                           </span>
                         </div>
 
-                        <button
-                          onClick={() => {
-                            const txId = triggerManualRecurringExecution(item.id);
-                            if (txId) {
-                              confetti({ particleCount: 20, spread: 40 });
-                            }
-                          }}
-                          title="Record this occurrence now"
-                          className="p-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all"
-                        >
-                          <Zap size={13} />
-                        </button>
+                        <div className="mt-2 relative z-10">
+                          <h4 className="text-xs font-bold text-white truncate">{item.name}</h4>
+                          <div className="flex items-center justify-between mt-0.5 text-[10px] text-indigo-200">
+                            <span>{item.accountName || cat?.name || 'General'}</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-2.5 pt-2 border-t border-white/20 relative z-10 flex items-center justify-between gap-2">
+                          <div className="flex flex-col">
+                            <span className="text-[8.5px] uppercase font-semibold text-indigo-300">Amount</span>
+                            <span className="text-sm font-extrabold text-white">
+                              {isIncome ? `+${formatINR(item.amount)}` : formatINR(item.amount)}
+                            </span>
+                          </div>
+                          
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const txId = triggerManualRecurringExecution(item.id);
+                              if (txId) {
+                                confetti({ particleCount: 20, spread: 40 });
+                              }
+                            }}
+                            className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors cursor-pointer"
+                            title="Execute Now"
+                          >
+                            <Zap size={13} className="text-white" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                  <div onClick={() => { setRecurringModalInitialCreate(true); setShowRecurringModal(true); }} className="shrink-0 w-32 p-3.5 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-all flex flex-col items-center justify-center min-h-[142px]">
+                    <Plus size={24} className="mb-2 text-slate-400" />
+                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300 text-center">Record Recurring</span>
+                  </div>
+                </div>
+              )
+            )}
+
+            {commitmentTab === 'SUBSCRIPTIONS' && (
+              unifiedUpcomingList.filter(i => i.isSubscription).length === 0 ? (
+                <div className="p-4 rounded-2xl bg-violet-50/40 dark:bg-violet-950/20 border border-dashed border-violet-200/70 dark:border-violet-800/50 text-center space-y-2">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                    No active subscriptions tracked.
+                  </p>
+                  <div className="flex items-center justify-center space-x-2">
+                    <button
+                      onClick={() => setShowSubscriptionModal(true)}
+                      className="px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-xs inline-flex items-center space-x-1.5 cursor-pointer active:scale-95"
+                    >
+                      <Plus size={13} />
+                      <span>Record Subscription</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex space-x-2.5 overflow-x-auto pb-2 pt-1 no-scrollbar -mx-1 px-1 items-stretch">
+                  {unifiedUpcomingList.filter(i => i.isSubscription).map((item, idx) => {
+                    const dueInfo = formatDueBadge(item.nextDueDate);
+                    const cardStyle = getThemedCardStyle(item.color, '#8B5CF6');
+                    return (
+                      <div
+                        key={`dash_sub_${item.id}_${idx}`}
+                        onClick={() => setShowSubscriptionModal(true)}
+                        style={cardStyle}
+                        className="shrink-0 w-56 sm:w-60 p-3.5 rounded-2xl text-white border shadow-md cursor-pointer hover:shadow-xl transition-all flex flex-col justify-between min-h-[142px] relative overflow-hidden group"
+                      >
+                        <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-white/10 blur-lg pointer-events-none" />
+                        
+                        <div className="relative z-10 flex items-center justify-between">
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-lg bg-black/30 backdrop-blur-xs text-violet-300">
+                            {item.frequency}
+                          </span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg bg-white/20 ${dueInfo.color === 'border-rose-300 text-rose-700 dark:border-rose-500/50 dark:text-rose-400' ? 'text-rose-300' : 'text-slate-100'}`}>
+                            {dueInfo.label}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 relative z-10">
+                          <h4 className="text-xs font-bold text-white truncate">{item.name}</h4>
+                          <div className="flex items-center justify-between mt-0.5 text-[10px] text-violet-200">
+                            <span>{item.accountName || 'General'}</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-2.5 pt-2 border-t border-white/20 relative z-10 flex items-center justify-between gap-2">
+                          <div className="flex flex-col">
+                            <span className="text-[8.5px] uppercase font-semibold text-violet-300">Cost</span>
+                            <span className="text-sm font-extrabold text-white">
+                              {formatINR(item.amount)}
+                            </span>
+                          </div>
+                          
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const txId = triggerManualRecurringExecution(item.id);
+                              if (txId) {
+                                confetti({ particleCount: 20, spread: 40 });
+                              }
+                            }}
+                            className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors cursor-pointer"
+                            title="Execute Now"
+                          >
+                            <Zap size={13} className="text-white" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div onClick={() => setShowSubscriptionModal(true)} className="shrink-0 w-32 p-3.5 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 text-slate-500 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-750 transition-all flex flex-col items-center justify-center min-h-[142px]">
+                    <Plus size={24} className="mb-2 text-slate-400" />
+                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300 text-center">Record Subscription</span>
+                  </div>
+                </div>
+              )
             )}
           </div>
 
@@ -1277,443 +1458,34 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <div className="space-y-2">
                 {categorySpending.slice(0, 5).map((cat, idx) => (
                   <button
-                    key={`top_cat_${cat.categoryId || 'cat'}_${idx}`}
-                    onClick={() =>
-                      setSelectedCategoryForLedger({
-                        categoryId: cat.categoryId,
-                        categoryName: cat.categoryName,
-                        icon: cat.icon,
-                        color: cat.color,
-                        totalAmount: cat.totalAmount,
-                      })
-                    }
-                    className="w-full text-left p-2.5 rounded-2xl bg-slate-50/60 dark:bg-slate-850/60 hover:bg-slate-100/90 dark:hover:bg-slate-750/90 border border-slate-200/60 dark:border-slate-700/60 transition-all group active:scale-99"
+                    key={`dash_cat_${cat.categoryId}_${idx}`}
+                    onClick={() => setActiveView('insights')}
+                    className="w-full flex items-center justify-between p-2 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-750/50 transition-colors group cursor-pointer"
                   >
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <div className="flex items-center space-x-2">
-                        <Category3DIcon
-                          name={cat.icon}
-                          categoryName={cat.categoryName}
-                          color={cat.color}
-                          size="sm"
-                          glow={false}
-                        />
-                        <div>
-                          <span className="font-bold text-slate-800 dark:text-slate-200 block group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                            {cat.categoryName}
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {cat.transactionCount} txns • View ledger →
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-extrabold text-slate-900 dark:text-white">
-                          {formatINR(cat.totalAmount)}
+                    <div className="flex items-center space-x-2.5">
+                      <Category3DIcon
+                        name={cat.icon}
+                        categoryName={cat.categoryName}
+                        color={cat.color}
+                        size="sm"
+                        glow={false}
+                      />
+                      <div className="text-left">
+                        <span className="font-bold text-slate-800 dark:text-slate-200 block text-xs group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                          {cat.categoryName}
                         </span>
-                        <span className="text-[10px] text-slate-400 ml-1.5 font-medium">
-                          ({cat.percentage.toFixed(0)}%)
+                        <span className="text-[10px] text-slate-500">
+                          {cat.transactionCount} transaction{cat.transactionCount !== 1 ? 's' : ''}
                         </span>
                       </div>
                     </div>
-                    <div className="w-full h-1.5 bg-slate-200/70 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-300"
-                        style={{
-                          width: `${Math.min(100, cat.percentage)}%`,
-                          backgroundColor: cat.color,
-                        }}
-                      />
+                    <div className="text-right">
+                      <span className="font-extrabold text-slate-900 dark:text-white block text-sm">
+                        {formatINR(cat.totalAmount)}
+                      </span>
                     </div>
                   </button>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {/* Budget Health Progress */}
-          {budgets.length > 0 && (
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-4 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Monthly Budgets
-                </h3>
-                <span className="text-[11px] text-slate-400">{budgets.length} active</span>
-              </div>
-
-              <div className="space-y-3">
-                {budgets.slice(0, 3).map((b, idx) => {
-                  const cat = categories.find(c => c.id === b.categoryId);
-                  const catSpend = categorySpending.find(cs => cs.categoryId === b.categoryId);
-                  const spent = catSpend ? catSpend.totalAmount : 0;
-                  const budgetTitle = b.name || cat?.name || 'General Budget';
-                  const percent = b.amount > 0 ? (spent / b.amount) * 100 : 0;
-                  const isOver = spent > b.amount;
-                  const remaining = Math.max(0, b.amount - spent);
-
-                  return (
-                    <div key={`dash_b_${b.id}_${idx}`} className="space-y-1">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                          {budgetTitle}
-                        </span>
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          {formatINR(spent)} / {formatINR(b.amount)}
-                        </span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${
-                            isOver ? 'bg-rose-500' : percent > 85 ? 'bg-amber-500' : 'bg-emerald-500'
-                          }`}
-                          style={{ width: `${Math.min(100, percent)}%` }}
-                        />
-                      </div>
-                      <p className="text-[10px] text-slate-500 flex justify-between">
-                        <span>{percent.toFixed(0)}% used</span>
-                        <span>{isOver ? `Exceeded by ${formatINR(spent - b.amount)}` : `${formatINR(remaining)} left`}</span>
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-        </>
-      ) : (
-        /* Merged Insights & Analytics View */
-        <div className="space-y-4 animate-in fade-in-50 duration-200">
-          {/* Insights Subtab Switcher */}
-          <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200 dark:border-slate-700">
-            <button
-              onClick={() => setInsightsSection('spending')}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
-                insightsSection === 'spending'
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              Categories & Spends
-            </button>
-            <button
-              onClick={() => setInsightsSection('cashflow')}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
-                insightsSection === 'cashflow'
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              Income vs Expense
-            </button>
-            <button
-              onClick={() => setInsightsSection('networth')}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
-                insightsSection === 'networth'
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              Net Worth Equation
-            </button>
-          </div>
-
-          {/* Key Stat Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 shadow-xs">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide block">Total Spent</span>
-              <span className="text-base sm:text-lg font-extrabold text-rose-600 dark:text-rose-400 block mt-0.5">
-                {formatINR(summary.monthlyExpenses)}
-              </span>
-              <span className="text-[10px] text-slate-400">{activeMonth}</span>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 shadow-xs">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide block">Daily Average</span>
-              <span className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white block mt-0.5">
-                {formatINR(dailyAverage)}
-              </span>
-              <span className="text-[10px] text-slate-400">Avg spend / day</span>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 shadow-xs">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide block">Total Earned</span>
-              <span className="text-base sm:text-lg font-extrabold text-emerald-600 dark:text-emerald-400 block mt-0.5">
-                {formatINR(summary.monthlyIncome)}
-              </span>
-              <span className="text-[10px] text-slate-400">Inflows</span>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 shadow-xs">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide block">Savings Rate</span>
-              <span className="text-base sm:text-lg font-extrabold text-teal-600 dark:text-teal-400 block mt-0.5">
-                {summary.savingsRatePercent.toFixed(0)}%
-              </span>
-              <span className="text-[10px] text-slate-400">{formatINR(summary.monthlySavings)}</span>
-            </div>
-          </div>
-
-          {/* Section 1: Categories & Top Spends */}
-          {insightsSection === 'spending' && (
-            <div className="space-y-4">
-              {/* Main Visual Chart Engine Card */}
-              <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-100 dark:border-slate-700/60">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
-                      <Activity size={16} className="text-emerald-500" />
-                      <span>Spend Visualizer</span>
-                    </h3>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Interactive bar graphs, pie charts & trends
-                    </p>
-                  </div>
-
-                  {/* Chart Visual Type Switcher */}
-                  <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-750 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-700 shrink-0 overflow-x-auto scrollbar-none">
-                    <button
-                      onClick={() => setChartVisualType('pie')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
-                        chartVisualType === 'pie'
-                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
-                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <PieChart size={13} className={chartVisualType === 'pie' ? 'text-emerald-500' : ''} />
-                      <span>Pie / Donut</span>
-                    </button>
-
-                    <button
-                      onClick={() => setChartVisualType('bar')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
-                        chartVisualType === 'bar'
-                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
-                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <BarChart2 size={13} className={chartVisualType === 'bar' ? 'text-blue-500' : ''} />
-                      <span>Bar Graph</span>
-                    </button>
-
-                    <button
-                      onClick={() => setChartVisualType('trend')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
-                        chartVisualType === 'trend'
-                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
-                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <Calendar size={13} className={chartVisualType === 'trend' ? 'text-amber-500' : ''} />
-                      <span>Daily Trend</span>
-                    </button>
-
-                    <button
-                      onClick={() => setChartVisualType('channel')}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
-                        chartVisualType === 'channel'
-                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
-                          : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <Smartphone size={13} className={chartVisualType === 'channel' ? 'text-purple-500' : ''} />
-                      <span>Channels</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Selected Visual Chart */}
-                <div className="pt-1">
-                  {chartVisualType === 'pie' && (
-                    <SpendsPieChart
-                      categorySpending={categorySpending}
-                      totalExpenses={summary.monthlyExpenses}
-                      activeMonth={activeMonth}
-                    />
-                  )}
-
-                  {chartVisualType === 'bar' && (
-                    <CategoryBarChart
-                      categorySpending={categorySpending}
-                      activeMonth={activeMonth}
-                    />
-                  )}
-
-                  {chartVisualType === 'trend' && (
-                    <DailySpendTrendChart
-                      transactions={transactions}
-                      activeMonth={activeMonth}
-                      totalExpenses={summary.monthlyExpenses}
-                    />
-                  )}
-
-                  {chartVisualType === 'channel' && (
-                    <PaymentChannelChart
-                      transactions={transactions}
-                      accounts={accounts}
-                      creditCards={creditCards}
-                      paymentApps={paymentApps}
-                      activeMonth={activeMonth}
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* Detailed Visual Category Distribution */}
-              <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Category Distribution
-                  </h3>
-                  <span className="text-xs text-slate-400">
-                    {categorySpending.length} categories logged
-                  </span>
-                </div>
-
-                {categorySpending.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-6">No expenses logged for {activeMonth}</p>
-                ) : (
-                  <div className="space-y-3">
-                    {categorySpending.map((cat, idx) => (
-                      <button
-                        key={`cat_spend_${cat.categoryId || 'cat'}_${idx}`}
-                        onClick={() =>
-                          setSelectedCategoryForLedger({
-                            categoryId: cat.categoryId,
-                            categoryName: cat.categoryName,
-                            icon: cat.icon,
-                            color: cat.color,
-                            totalAmount: cat.totalAmount,
-                          })
-                        }
-                        className="w-full text-left space-y-1.5 p-2.5 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-750 border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700 transition-all group"
-                      >
-                        <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center space-x-2.5">
-                            <Category3DIcon
-                              name={cat.icon}
-                              categoryName={cat.categoryName}
-                              color={cat.color}
-                              size="sm"
-                              glow={true}
-                            />
-                            <div>
-                              <span className="font-bold text-slate-800 dark:text-slate-200 block text-xs group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                                {cat.categoryName}
-                              </span>
-                              <span className="text-[10px] text-slate-400">
-                                {cat.transactionCount} transactions • Click for ledger →
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <span className="font-extrabold text-slate-900 dark:text-white block">
-                              {formatINR(cat.totalAmount)}
-                            </span>
-                            <span className="text-[10px] font-semibold text-slate-500">
-                              {cat.percentage.toFixed(1)}%
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{
-                              width: `${Math.min(100, cat.percentage)}%`,
-                              backgroundColor: cat.color,
-                            }}
-                          />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Top Merchants Breakdown */}
-              {topMerchants.length > 0 && (
-                <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-3">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
-                    <ShoppingBag size={16} className="text-emerald-500" />
-                    <span>Top Spends by Merchant</span>
-                  </h3>
-                  <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
-                    {topMerchants.map(([name, amount], idx) => (
-                      <div key={`top_merch_${name}_${idx}`} className="py-2.5 flex items-center justify-between text-xs">
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                          {idx + 1}. {name}
-                        </span>
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          {formatINR(amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Section 2: Cashflow & Savings */}
-          {insightsSection === 'cashflow' && (
-            <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
-                <BarChart2 size={16} className="text-cyan-500" />
-                <span>Monthly Inflow vs Outflow Equation</span>
-              </h3>
-
-              {/* Visual Grouped Bar Chart */}
-              <CashflowComparisonChart summary={summary} activeMonth={activeMonth} />
-              
-              <div className="space-y-3.5 pt-4 border-t border-slate-100 dark:border-slate-700/60">
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-emerald-600 dark:text-emerald-400 flex items-center">
-                      <ArrowDownLeft size={14} className="mr-1" /> Total Income (Inflow)
-                    </span>
-                    <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatINR(summary.monthlyIncome)}</span>
-                  </div>
-                  <div className="w-full h-4 bg-emerald-50 dark:bg-emerald-950/40 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full w-full" />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-rose-600 dark:text-rose-400 flex items-center">
-                      <ArrowUpRight size={14} className="mr-1" /> Total Expenses (Outflow)
-                    </span>
-                    <span className="text-rose-600 dark:text-rose-400 font-bold">{formatINR(summary.monthlyExpenses)}</span>
-                  </div>
-                  <div className="w-full h-4 bg-rose-50 dark:bg-rose-950/40 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-rose-500 rounded-full transition-all"
-                      style={{
-                        width: `${summary.monthlyIncome > 0 ? Math.min(100, (summary.monthlyExpenses / summary.monthlyIncome) * 100) : 100}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-teal-600 dark:text-teal-400 flex items-center">
-                      <Sparkles size={14} className="mr-1" /> Net Savings Retained
-                    </span>
-                    <span className="text-teal-600 dark:text-teal-400 font-bold">
-                      {formatINR(summary.monthlySavings)} ({summary.savingsRatePercent.toFixed(0)}%)
-                    </span>
-                  </div>
-                  <div className="w-full h-4 bg-teal-50 dark:bg-teal-950/40 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-teal-500 rounded-full transition-all"
-                      style={{
-                        width: `${Math.max(0, Math.min(100, summary.savingsRatePercent))}%`,
-                      }}
-                    />
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -1849,8 +1621,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       {/* Financial Suite Modals */}
       <GoalManagementModal isOpen={showGoalModal} onClose={() => setShowGoalModal(false)} />
       <InvestmentManagementModal isOpen={showInvestmentModal} onClose={() => setShowInvestmentModal(false)} />
-      <LentBorrowedManagementModal isOpen={showLentBorrowedModal} onClose={() => setShowLentBorrowedModal(false)} />
+      <LentBorrowedManagementModal
+        isOpen={showLentBorrowedModal}
+        onClose={() => {
+          setShowLentBorrowedModal(false);
+          setLentBorrowedSettlingDebt(null);
+        }}
+        initialTab={lentBorrowedModalInitialTab}
+        initialSettlingDebt={lentBorrowedSettlingDebt}
+      />
       <LoanManagementModal isOpen={showLoanModal} onClose={() => setShowLoanModal(false)} />
     </div>
   );
-};
+});

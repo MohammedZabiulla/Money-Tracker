@@ -1,3 +1,4 @@
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { ActivityDomain, ActivityActionType } from '../../types';
@@ -58,6 +59,8 @@ const ACTION_BADGES: Record<ActivityActionType, { label: string; bg: string; tex
 };
 
 export const ActivityAuditLogModal: React.FC<ActivityAuditLogModalProps> = ({ isOpen, onClose }) => {
+  useScrollLock(isOpen);
+
   const { activityLogs, clearActivityLogs, exportActivityLogs } = useMoney();
 
   const [searchQuery, setSearchQuery] = useState('');

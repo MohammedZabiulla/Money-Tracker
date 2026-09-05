@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import { useMoney } from '../../context/MoneyContext';
 import { runAccountingSuite, TestResult } from '../../lib/accountingTests';
 import { exportToExcel, exportJsonBackup, restoreJsonBackup } from '../../lib/storage';
@@ -37,9 +38,10 @@ import {
   ArrowRight,
   Trash2,
   FileX2,
+  BookOpen,
 } from 'lucide-react';
 
-export const MoreView: React.FC = () => {
+export const MoreView: React.FC = React.memo(() => {
   const context = useMoney();
   const {
     budgets,
@@ -74,6 +76,9 @@ export const MoreView: React.FC = () => {
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [showCashewImportModal, setShowCashewImportModal] = useState(false);
   const [showAppImportExportModal, setShowAppImportExportModal] = useState(false);
+  const isAnyModalOpen = showGoalModal || showCategoryModal || showSubscriptionModal || showRecurringModal || showInvestmentModal || showLentBorrowedModal || showEmblemStudioModal || showPaymentAppModal || showBudgetModal || showLoanModal || showTemplateModal || showActivityLogModal || showTrashModal || showCashewImportModal || showAppImportExportModal;
+  useScrollLock(isAnyModalOpen);
+
   const [importExportInitialTab, setImportExportInitialTab] = useState<'EXPORT' | 'IMPORT'>('EXPORT');
 
   // Wipe / Reset Confirmation Modal State
@@ -128,6 +133,36 @@ export const MoreView: React.FC = () => {
       )}
 
 
+
+      {/* Quick Access to Comprehensive User Guide */}
+      <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-slate-500/10 dark:from-emerald-950/40 dark:via-teal-950/40 dark:to-slate-900/40 rounded-3xl border border-emerald-500/30 dark:border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center space-x-3.5">
+          <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+            <BookOpen size={20} />
+          </div>
+          <div>
+            <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+              Complete Step-by-Step App Guide & Tutorial
+            </h4>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              New to the app? Read simple step-by-step instructions for every single feature, card, and budget.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            const el = document.getElementById('app-complete-guide');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth' });
+            }
+          }}
+          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer transition-all shrink-0"
+        >
+          <span>Read User Guide</span>
+          <ArrowRight size={14} />
+        </button>
+      </div>
 
       {/* --------------------------------------------------------------------- */}
       {/* 2. FINANCIAL SUITE & PLANNING TOOLS */}
@@ -256,7 +291,7 @@ export const MoreView: React.FC = () => {
                   Lent / Borrowed
                 </h4>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 font-bold">
-                  {debts.length}
+                  {(debts || []).filter(d => !d.isDeleted && !d.isSettled).length}
                 </span>
               </div>
             </div>
@@ -276,7 +311,7 @@ export const MoreView: React.FC = () => {
                   Savings Goals
                 </h4>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 font-bold">
-                  {(goals || []).length}
+                  {(goals || []).filter(g => !g.isDeleted && g.status !== 'CLOSED').length}
                 </span>
               </div>
             </div>
@@ -617,4 +652,4 @@ export const MoreView: React.FC = () => {
       )}
     </div>
   );
-};
+});

@@ -1,3 +1,4 @@
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Subscription, SubscriptionCatalogItem, RecurrenceFrequency } from '../../types';
@@ -5,6 +6,7 @@ import { formatINR } from '../../lib/currency';
 import { Category3DIcon, SubscriptionBrandIcon } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { CustomDatePicker } from '../common/CustomDatePicker';
+import { ConfirmDeleteModal } from '../common/ConfirmDeleteModal';
 import {
   X,
   Plus,
@@ -1035,16 +1037,20 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
   isOpen,
   onClose,
 }) => {
+  useScrollLock(isOpen);
+
   const {
     subscriptions,
     accounts,
     creditCards,
+    goals,
     addSubscription,
     updateSubscription,
     deleteSubscription,
   } = useMoney();
 
   const [activeTab, setActiveTab] = useState<'CATALOGUE' | 'ACTIVE' | 'CUSTOM'>('CATALOGUE');
+  const [deleteConfirmSub, setDeleteConfirmSub] = useState<Subscription | null>(null);
 
   // Catalogue search & category
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -1060,6 +1066,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
     return d.toISOString().substring(0, 10);
   });
   const [adoptAccountId, setAdoptAccountId] = useState<string>('');
+  const [adoptGoalId, setAdoptGoalId] = useState<string>('');
 
   // Custom Form State
   const [customName, setCustomName] = useState('');
@@ -1073,11 +1080,38 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
   const [customIcon] = useState('Repeat');
   const [customColor, setCustomColor] = useState('#8B5CF6');
   const [customAccountId, setCustomAccountId] = useState('');
+  const [customGoalId, setCustomGoalId] = useState('');
   const [customNotes, setCustomNotes] = useState('');
   const [customError, setCustomError] = useState<string | null>(null);
 
   // Editing active subscription
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
+
+  // Goal Options for CustomSelect
+  const goalSelectOptions: SelectOption<string>[] = useMemo(() => {
+    const opts: SelectOption<string>[] = [
+      {
+        value: '',
+        label: 'None / Do Not Link to Goal',
+        sublabel: 'Regular subscription payment',
+      },
+    ];
+
+    (goals || [])
+      .filter(g => !g.isDeleted && g.status === 'IN_PROGRESS')
+      .forEach(g => {
+        opts.push({
+          value: g.id,
+          label: g.name,
+          sublabel: `Target: ${formatINR(g.targetAmount)} (Saved: ${formatINR(g.currentAmount)})`,
+          rightText: `${Math.round((g.currentAmount / (g.targetAmount || 1)) * 100)}%`,
+          iconColor: g.color,
+          iconName: g.icon || 'Target',
+        });
+      });
+
+    return opts;
+  }, [goals]);
 
   // Accounts options
   const paymentSourcesOptions: SelectOption<string>[] = useMemo(() => {
@@ -1169,6 +1203,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
     setSelectedCatalogItem(item);
     setAdoptPlanAmount(item.defaultAmount.toString());
     setAdoptFrequency(item.frequency);
+    setAdoptGoalId('');
     if (accounts.length > 0) setAdoptAccountId(accounts[0].id);
   };
 
@@ -1184,11 +1219,13 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
       icon: selectedCatalogItem.icon,
       color: selectedCatalogItem.color,
       accountId: adoptAccountId || undefined,
+      goalId: adoptGoalId || undefined,
       isActive: true,
       notes: selectedCatalogItem.tagline,
     });
 
     setSelectedCatalogItem(null);
+    setAdoptGoalId('');
     setActiveTab('ACTIVE');
   };
 
@@ -1212,6 +1249,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
       icon: customIcon || 'Repeat',
       color: customColor || '#8B5CF6',
       accountId: customAccountId || undefined,
+      goalId: customGoalId || undefined,
       isActive: true,
       notes: customNotes.trim() || undefined,
     });
@@ -1219,6 +1257,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
     setCustomName('');
     setCustomAmount('');
     setCustomNotes('');
+    setCustomGoalId('');
     setCustomError(null);
     setActiveTab('ACTIVE');
   };
@@ -1233,6 +1272,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
       color: editingSub.color,
       icon: editingSub.icon,
       accountId: editingSub.accountId,
+      goalId: editingSub.goalId,
       isActive: editingSub.isActive,
       notes: editingSub.notes,
     });
@@ -1492,33 +1532,40 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
               </div>
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {activeSubscriptions.map((sub, idx) => (
-                  <div
-                    key={`sub_${sub.id}_${idx}`}
-                    className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <SubscriptionBrandIcon
-                        name={sub.name}
-                        color={sub.color || '#8B5CF6'}
-                        fallbackIcon={sub.icon || 'Repeat'}
-                        size="md"
-                      />
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <h4 className="font-bold text-sm text-slate-900 dark:text-white leading-tight">
-                            {sub.name}
-                          </h4>
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 uppercase">
-                            {sub.frequency}
-                          </span>
+                {activeSubscriptions.map((sub, idx) => {
+                  const linkedGoal = goals?.find(g => g.id === sub.goalId);
+                  return (
+                    <div
+                      key={`sub_${sub.id}_${idx}`}
+                      className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <SubscriptionBrandIcon
+                          name={sub.name}
+                          color={sub.color || '#8B5CF6'}
+                          fallbackIcon={sub.icon || 'Repeat'}
+                          size="md"
+                        />
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <h4 className="font-bold text-sm text-slate-900 dark:text-white leading-tight">
+                              {sub.name}
+                            </h4>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 uppercase">
+                              {sub.frequency}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5 flex flex-wrap items-center gap-1.5">
+                            <span>Renews on <strong className="text-slate-700 dark:text-slate-300">{sub.nextBillingDate}</strong></span>
+                            {sub.notes && <span>• {sub.notes}</span>}
+                            {linkedGoal && (
+                              <span className="px-1.5 py-0.5 rounded bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 font-bold text-[9px] flex items-center gap-0.5 shrink-0">
+                                🎯 {linkedGoal.name}
+                              </span>
+                            )}
+                          </p>
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Renews on <strong className="text-slate-700 dark:text-slate-300">{sub.nextBillingDate}</strong>
-                          {sub.notes && ` • ${sub.notes}`}
-                        </p>
                       </div>
-                    </div>
 
                     <div className="flex items-center justify-between sm:justify-end space-x-3">
                       <div className="text-right">
@@ -1541,7 +1588,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
                           <Edit2 size={14} />
                         </button>
                         <button
-                          onClick={() => deleteSubscription(sub.id)}
+                          onClick={() => setDeleteConfirmSub(sub)}
                           className="p-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-500 hover:text-rose-500 transition-colors"
                           title="Delete Subscription"
                         >
@@ -1550,7 +1597,8 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
                       </div>
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
             )}
           </div>
@@ -1637,6 +1685,19 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
                     size="sm"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Link to Savings Goal (Optional)
+                </label>
+                <CustomSelect
+                  value={customGoalId}
+                  onChange={val => setCustomGoalId(val)}
+                  options={goalSelectOptions}
+                  size="sm"
+                  placeholder="Choose a goal to auto-contribute on renewal..."
+                />
               </div>
 
               <div>
@@ -1774,6 +1835,19 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
                 />
               </div>
 
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Link to Savings Goal (Optional)
+                </label>
+                <CustomSelect
+                  value={adoptGoalId}
+                  onChange={val => setAdoptGoalId(val)}
+                  options={goalSelectOptions}
+                  size="sm"
+                  placeholder="Select a savings goal to fund..."
+                />
+              </div>
+
               <button
                 onClick={handleConfirmAdopt}
                 className="w-full py-3 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all active:scale-98"
@@ -1848,6 +1922,19 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
                   />
                 </div>
 
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Linked Savings Goal (Optional)
+                  </label>
+                  <CustomSelect
+                    value={editingSub.goalId || ''}
+                    onChange={val => setEditingSub({ ...editingSub, goalId: val || undefined })}
+                    options={goalSelectOptions}
+                    size="sm"
+                    placeholder="Choose a savings goal to fund..."
+                  />
+                </div>
+
                 <button
                   onClick={handleSaveEdit}
                   className="w-full py-3 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md"
@@ -1858,6 +1945,30 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
             </div>
           </div>
         )}
+        {/* Delete Confirmation Modal */}
+        <ConfirmDeleteModal
+          isOpen={Boolean(deleteConfirmSub)}
+          onClose={() => setDeleteConfirmSub(null)}
+          onConfirm={() => {
+            if (deleteConfirmSub) {
+              deleteSubscription(deleteConfirmSub.id);
+              setDeleteConfirmSub(null);
+            }
+          }}
+          title="Delete Subscription?"
+          description="Are you sure you want to delete this subscription? You can restore it anytime from More → Trash Bin."
+          itemDetails={
+            deleteConfirmSub
+              ? {
+                  title: deleteConfirmSub.name,
+                  amount: `${formatINR(deleteConfirmSub.amount)} / ${deleteConfirmSub.frequency.toLowerCase()}`,
+                  subtitle: `Next billing: ${deleteConfirmSub.nextBillingDate || 'Scheduled'}`,
+                  badge: deleteConfirmSub.status || 'Active',
+                }
+              : undefined
+          }
+          confirmLabel="Delete Subscription"
+        />
       </div>
     </div>
   );

@@ -34,9 +34,9 @@ export const CURRENCY_RATES: Record<string, CurrencyRate> = {
 };
 
 /**
- * Convert 24-hour time format (e.g. "14:30", "09:05", "0:15") or ISO timestamp to 12-hour AM/PM format (e.g. "2:30 PM", "9:05 AM", "12:15 AM")
+ * Convert 24-hour time format (e.g. "14:30:45", "14:30", "09:05") or ISO timestamp to 12-hour AM/PM format with seconds (e.g. "2:30:45 PM", "9:05:00 AM")
  */
-export function format12HourTime(timeStr?: string, timestamp?: number): string {
+export function format12HourTime(timeStr?: string, timestamp?: number, showSeconds: boolean = true): string {
   if (timeStr && timeStr.trim()) {
     const trimmed = timeStr.trim();
     // If it's already in 12-hour AM/PM format (e.g. "2:30 PM" or "02:30pm"), return normalized
@@ -47,10 +47,21 @@ export function format12HourTime(timeStr?: string, timestamp?: number): string {
     if (parts.length >= 2) {
       let hours = parseInt(parts[0], 10);
       const minutes = parseInt(parts[1], 10);
+      let seconds: number | undefined = parts.length >= 3 ? parseInt(parts[2], 10) : undefined;
+      
+      if (seconds === undefined && timestamp && !isNaN(timestamp)) {
+        seconds = new Date(timestamp).getSeconds();
+      }
+
       if (!isNaN(hours) && !isNaN(minutes)) {
         const period = hours >= 12 ? 'PM' : 'AM';
         hours = hours % 12 || 12;
         const formattedMinutes = String(minutes).padStart(2, '0');
+        if (showSeconds) {
+          const secVal = seconds !== undefined && !isNaN(seconds) ? seconds : 0;
+          const formattedSeconds = String(secVal).padStart(2, '0');
+          return `${hours}:${formattedMinutes}:${formattedSeconds} ${period}`;
+        }
         return `${hours}:${formattedMinutes} ${period}`;
       }
     }
@@ -60,13 +71,18 @@ export function format12HourTime(timeStr?: string, timestamp?: number): string {
     const date = new Date(timestamp);
     let hours = date.getHours();
     const minutes = date.getMinutes();
+    const seconds = date.getSeconds();
     const period = hours >= 12 ? 'PM' : 'AM';
     hours = hours % 12 || 12;
     const formattedMinutes = String(minutes).padStart(2, '0');
+    if (showSeconds) {
+      const formattedSeconds = String(seconds).padStart(2, '0');
+      return `${hours}:${formattedMinutes}:${formattedSeconds} ${period}`;
+    }
     return `${hours}:${formattedMinutes} ${period}`;
   }
 
-  return '12:00 PM';
+  return showSeconds ? '12:00:00 PM' : '12:00 PM';
 }
 
 export function convertCurrency(amount: number, fromCode: string, toCode: string = 'INR'): number {

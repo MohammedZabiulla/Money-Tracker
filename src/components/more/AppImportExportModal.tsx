@@ -1,3 +1,4 @@
+import { useScrollLock } from "../../hooks/useScrollLock";
 import React, { useState, useEffect, useRef, ChangeEvent, DragEvent } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import {
@@ -52,6 +53,8 @@ export const AppImportExportModal: React.FC<AppImportExportModalProps> = ({
   onClose,
   initialTab = 'EXPORT',
 }) => {
+  useScrollLock(isOpen);
+
   const context = useMoney();
   const fileInputRef = useRef<HTMLInputElement>(null);
 

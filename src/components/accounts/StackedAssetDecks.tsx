@@ -373,7 +373,7 @@ export const StackedBanksDeck: React.FC<StackedBanksDeckProps> = ({
                           {acc.name}
                         </h4>
                         <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">
-                          {acc.type.replace('_', ' ')}
+                          {typeof acc.type === 'string' ? acc.type.replace('_', ' ') : 'Account'}
                         </span>
                       </div>
                       <p className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center space-x-1.5">

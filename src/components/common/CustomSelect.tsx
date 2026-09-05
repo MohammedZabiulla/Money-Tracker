@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ChevronDown,
@@ -8,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Category3DIcon } from './Category3DIcon';
 import { Bank3DIcon } from './Bank3DIcon';
+import { PaymentApp3DIcon } from './PaymentApp3DIcon';
 import { CARD_THEMES } from '../../lib/constants';
 import { EMVChip, NetworkLogo } from './CardVisual';
 
@@ -29,6 +31,8 @@ export interface SelectOption<T = string> {
   network?: string;
   isBankAccount?: boolean;
   bankTheme?: string;
+  isPaymentApp?: boolean;
+  paymentAppName?: string;
 }
 
 export interface CustomSelectProps<T = string> {
@@ -65,6 +69,7 @@ export function CustomSelect<T extends string | number>({
   id,
 }: CustomSelectProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
+  useScrollLock(isOpen);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -405,6 +410,59 @@ function OptionItem<T>({ option, isSelected, onSelect, renderIcon }: OptionItemP
               isSelected
                 ? 'bg-emerald-500 text-white shadow-xs scale-105 ring-2 ring-white/40'
                 : 'border border-emerald-500/40 bg-black/20 opacity-60 group-hover:opacity-100'
+            }`}
+          >
+            {isSelected && <Check size={12} strokeWidth={3} />}
+          </div>
+        </div>
+      </button>
+    );
+  }
+
+
+  if (option.isPaymentApp) {
+    return (
+      <button
+        type="button"
+        disabled={option.disabled}
+        onClick={onSelect}
+        className={`w-full flex items-center justify-between p-3.5 rounded-2xl text-left transition-all group bg-white dark:bg-slate-800 shadow-sm border ${
+          isSelected ? 'border-emerald-400 ring-2 ring-emerald-400/50 scale-[1.01]' : 'border-slate-200 dark:border-slate-700'
+        } ${option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:border-emerald-300 dark:hover:border-emerald-500/60 hover:shadow-md'}`}
+      >
+        <div className="flex items-center space-x-3 min-w-0 pr-3">
+          <PaymentApp3DIcon appName={option.paymentAppName || option.label} size="md" glow={isSelected} />
+          <div className="min-w-0">
+            <div className="flex items-center space-x-2">
+              <span className={`text-xs sm:text-sm truncate ${isSelected ? 'font-bold text-emerald-900 dark:text-emerald-200' : 'font-bold text-slate-800 dark:text-slate-100'}`}>
+                {option.label}
+              </span>
+              {option.badge && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+                  {option.badge}
+                </span>
+              )}
+            </div>
+            {option.sublabel && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium">
+                {option.sublabel}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center space-x-3 shrink-0">
+          {option.rightText && (
+            <div className="text-right">
+              <span className={`text-xs sm:text-sm font-bold block ${isSelected ? 'text-emerald-600' : 'text-slate-900 dark:text-white'}`}>
+                {option.rightText}
+              </span>
+            </div>
+          )}
+          <div
+            className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+              isSelected
+                ? 'bg-emerald-500 text-white shadow-xs scale-105 ring-2 ring-emerald-400/50'
+                : 'border border-slate-300 dark:border-slate-600 opacity-40 group-hover:opacity-100'
             }`}
           >
             {isSelected && <Check size={12} strokeWidth={3} />}

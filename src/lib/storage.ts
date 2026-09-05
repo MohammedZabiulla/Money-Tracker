@@ -127,7 +127,46 @@ export function loadInitialState(): LocalStorageState {
     const categories = parseJson<Category[]>(localStorage.getItem(STORAGE_KEYS.CATEGORIES), DEFAULT_CATEGORIES);
     const merchants = parseJson<Merchant[]>(localStorage.getItem(STORAGE_KEYS.MERCHANTS), []);
     const paymentApps = parseJson<PaymentApp[]>(localStorage.getItem(STORAGE_KEYS.PAYMENT_APPS), DEFAULT_PAYMENT_APPS);
-    const transactions = parseJson<Transaction[]>(localStorage.getItem(STORAGE_KEYS.TRANSACTIONS), []);
+    const rawTransactions = parseJson<Transaction[]>(localStorage.getItem(STORAGE_KEYS.TRANSACTIONS), []);
+    const rawDebts = parseJson<DebtRecord[]>(localStorage.getItem(STORAGE_KEYS.DEBTS), []);
+    const debts = [...rawDebts];
+
+    // Sanitize & heal transactions + auto-link debts
+    const transactions = rawTransactions.map(t => {
+      let updated = { ...t };
+      if (typeof updated.type !== 'string' || !updated.type) {
+        updated.type = 'EXPENSE';
+      }
+      if (t.type === 'MONEY_LENT' || t.type === 'MONEY_BORROWED') {
+        // Fix category if accidentally assigned Food & Dining or cat_food
+        if (!updated.categoryName || updated.categoryName === 'Food & Dining' || updated.categoryId === 'cat_food') {
+          updated.categoryId = 'cat_transfer';
+          updated.categoryName = t.type === 'MONEY_LENT' ? 'Money Lent' : 'Money Borrowed';
+        }
+        if (!updated.debtPersonName && updated.merchantName) {
+          updated.debtPersonName = updated.merchantName;
+        }
+        const targetDebtId = updated.debtId || ('debt_' + updated.id);
+        updated.debtId = targetDebtId;
+
+        // Ensure this transaction is present in debts list
+        const existsInDebts = debts.some(d => d.id === targetDebtId);
+        if (!existsInDebts && !updated.isDeleted) {
+          debts.push({
+            id: targetDebtId,
+            type: updated.type === 'MONEY_LENT' ? 'LENT' : 'BORROWED',
+            personName: updated.debtPersonName || updated.merchantName || 'Person',
+            amount: updated.amount,
+            remainingAmount: updated.isDebtSettled ? 0 : updated.amount,
+            dueDate: updated.debtDueDate,
+            notes: updated.notes,
+            isSettled: !!updated.isDebtSettled,
+            createdAt: updated.timestamp || Date.now(),
+          });
+        }
+      }
+      return updated;
+    });
     const templates = parseJson<TransactionTemplate[]>(localStorage.getItem(STORAGE_KEYS.TEMPLATES), DEFAULT_TEMPLATES);
     const demo = getDemoData();
     const rawRecurring = localStorage.getItem(STORAGE_KEYS.RECURRING) !== null ? parseJson<RecurringTransaction[]>(localStorage.getItem(STORAGE_KEYS.RECURRING), []) : demo.recurring;
@@ -138,7 +177,6 @@ export function loadInitialState(): LocalStorageState {
     const goals = localStorage.getItem(STORAGE_KEYS.GOALS) !== null ? parseJson<Goal[]>(localStorage.getItem(STORAGE_KEYS.GOALS), []) : (getDemoData().goals || []);
     const loans = parseJson<Loan[]>(localStorage.getItem(STORAGE_KEYS.LOANS), []);
     const investments = parseJson<Investment[]>(localStorage.getItem(STORAGE_KEYS.INVESTMENTS), []);
-    const debts = parseJson<DebtRecord[]>(localStorage.getItem(STORAGE_KEYS.DEBTS), []);
     const reconciliations = parseJson<AccountReconciliation[]>(localStorage.getItem(STORAGE_KEYS.RECONCILIATIONS), []);
     const settings = parseJson<AppSettings>(localStorage.getItem(STORAGE_KEYS.SETTINGS), DEFAULT_APP_SETTINGS);
     const activityLogs = parseJson<import('../types').ActivityLog[]>(localStorage.getItem(STORAGE_KEYS.ACTIVITY_LOGS), []);
@@ -195,25 +233,57 @@ function parseJson<T>(value: string | null, fallback: T): T {
   }
 }
 
+function safeJsonStringify(data: any): string {
+  const seen = new WeakSet();
+  return JSON.stringify(data, (key, value) => {
+    if (value && typeof value === 'object') {
+      // Exclude DOM nodes, elements, React Fiber nodes, and circular structures
+      if (typeof Element !== 'undefined' && value instanceof Element) return undefined;
+      if (typeof Event !== 'undefined' && value instanceof Event) return undefined;
+      if (
+        value.constructor &&
+        (value.constructor.name === 'HTMLButtonElement' ||
+          value.constructor.name.includes('Element') ||
+          value.constructor.name.includes('Node') ||
+          value.constructor.name.includes('Fiber'))
+      ) {
+        return undefined;
+      }
+      if (seen.has(value)) {
+        return undefined;
+      }
+      seen.add(value);
+    }
+    return value;
+  });
+}
+
 export function saveFullState(state: LocalStorageState): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(state.accounts));
-    localStorage.setItem(STORAGE_KEYS.CREDIT_CARDS, JSON.stringify(state.creditCards));
-    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(state.categories));
-    localStorage.setItem(STORAGE_KEYS.MERCHANTS, JSON.stringify(state.merchants));
-    localStorage.setItem(STORAGE_KEYS.PAYMENT_APPS, JSON.stringify(state.paymentApps));
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(state.transactions));
-    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(state.templates || []));
-    localStorage.setItem(STORAGE_KEYS.RECURRING, JSON.stringify(state.recurring));
-    localStorage.setItem(STORAGE_KEYS.SUBSCRIPTIONS, JSON.stringify(state.subscriptions));
-    localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(state.budgets));
-    localStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(state.goals));
-    localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(state.loans));
-    localStorage.setItem(STORAGE_KEYS.INVESTMENTS, JSON.stringify(state.investments));
-    localStorage.setItem(STORAGE_KEYS.DEBTS, JSON.stringify(state.debts));
-    localStorage.setItem(STORAGE_KEYS.RECONCILIATIONS, JSON.stringify(state.reconciliations));
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(state.settings));
-    localStorage.setItem(STORAGE_KEYS.ACTIVITY_LOGS, JSON.stringify(state.activityLogs || []));
+    const sanitizedTransactions = (state.transactions || []).map(t => {
+      if (typeof t.type !== 'string' || !t.type) {
+        return { ...t, type: 'EXPENSE' as const };
+      }
+      return t;
+    });
+
+    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, safeJsonStringify(state.accounts));
+    localStorage.setItem(STORAGE_KEYS.CREDIT_CARDS, safeJsonStringify(state.creditCards));
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, safeJsonStringify(state.categories));
+    localStorage.setItem(STORAGE_KEYS.MERCHANTS, safeJsonStringify(state.merchants));
+    localStorage.setItem(STORAGE_KEYS.PAYMENT_APPS, safeJsonStringify(state.paymentApps));
+    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, safeJsonStringify(sanitizedTransactions));
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, safeJsonStringify(state.templates || []));
+    localStorage.setItem(STORAGE_KEYS.RECURRING, safeJsonStringify(state.recurring));
+    localStorage.setItem(STORAGE_KEYS.SUBSCRIPTIONS, safeJsonStringify(state.subscriptions));
+    localStorage.setItem(STORAGE_KEYS.BUDGETS, safeJsonStringify(state.budgets));
+    localStorage.setItem(STORAGE_KEYS.GOALS, safeJsonStringify(state.goals));
+    localStorage.setItem(STORAGE_KEYS.LOANS, safeJsonStringify(state.loans));
+    localStorage.setItem(STORAGE_KEYS.INVESTMENTS, safeJsonStringify(state.investments));
+    localStorage.setItem(STORAGE_KEYS.DEBTS, safeJsonStringify(state.debts));
+    localStorage.setItem(STORAGE_KEYS.RECONCILIATIONS, safeJsonStringify(state.reconciliations));
+    localStorage.setItem(STORAGE_KEYS.SETTINGS, safeJsonStringify(state.settings));
+    localStorage.setItem(STORAGE_KEYS.ACTIVITY_LOGS, safeJsonStringify(state.activityLogs || []));
   } catch (e) {
     console.error('Error writing to local storage', e);
   }

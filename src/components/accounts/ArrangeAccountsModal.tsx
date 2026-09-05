@@ -1,3 +1,4 @@
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState, useEffect } from 'react';
 import { Account } from '../../types';
 import { formatINR } from '../../lib/currency';
@@ -30,6 +31,8 @@ export const ArrangeAccountsModal: React.FC<ArrangeAccountsModalProps> = ({
   accounts,
   onSaveOrder,
 }) => {
+  useScrollLock(isOpen);
+
   const [items, setItems] = useState<Account[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);

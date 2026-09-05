@@ -1,3 +1,4 @@
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState, useMemo } from 'react';
 import {
   Emblem3D,
@@ -108,6 +109,8 @@ export const Emblem3DStudioModal: React.FC<Emblem3DStudioModalProps> = ({
   onClose,
   onSelectEmblem,
 }) => {
+  useScrollLock(isOpen);
+
   const [activeTab, setActiveTab] = useState<'GALLERY' | 'CREATOR' | 'MY_EMBLEMS'>('GALLERY');
 
   // Creator state

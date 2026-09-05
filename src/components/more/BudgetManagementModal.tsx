@@ -4,6 +4,7 @@ import { formatINR } from '../../lib/currency';
 import { Emblem3D } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { X, Plus, Trash2, Coins, AlertCircle } from 'lucide-react';
+import { useScrollLock } from '../../hooks/useScrollLock';
 
 interface BudgetManagementModalProps {
   isOpen: boolean;
@@ -14,6 +15,8 @@ export const BudgetManagementModal: React.FC<BudgetManagementModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  useScrollLock(isOpen);
+
   const { budgets, categories, addBudget, deleteBudget } = useMoney();
 
   const [name, setName] = useState('');

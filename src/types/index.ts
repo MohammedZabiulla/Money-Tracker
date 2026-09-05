@@ -266,6 +266,7 @@ export interface Transaction {
   loanId?: string;
   loanPrincipalPortion?: number;
   loanInterestPortion?: number;
+  debtId?: string; // Link to DebtRecord in personal ledger
   debtPersonName?: string; // For Money Lent / Money Borrowed
   debtDueDate?: string;
   isDebtSettled?: boolean;
@@ -308,10 +309,12 @@ export interface RecurringTransaction {
   paymentAppId?: string;
   paymentAppName?: string;
   merchantName?: string;
+  goalId?: string; // Link to Savings Goal
   autoRecord?: boolean; // automatically creates transaction entry on the relevant date
   isActive: boolean;
   notes?: string;
   tags?: string[];
+  color?: string;
   isDeleted?: boolean;
   deletedAt?: number;
   createdAt?: number;
@@ -380,6 +383,7 @@ export interface Subscription {
   icon: string;
   color: string;
   isActive: boolean;
+  goalId?: string; // Link to Savings Goal
   autoRecord?: boolean;
   notes?: string;
   isDeleted?: boolean;
@@ -414,7 +418,10 @@ export interface Loan {
   startDate: string;
   nextPaymentDate: string;
   linkedAccountId?: string;
+  linkedCreditCardId?: string;
+  linkedPaymentAppId?: string;
   notes?: string;
+  color?: string;
   order?: number;
   createdAt: number;
   isDeleted?: boolean;
@@ -424,10 +431,13 @@ export interface Loan {
 export interface Investment {
   id: string;
   name: string; // "Nifty 50 Index Fund", "HDFC Gold ETF", "SBI FD 3yr"
+  institution?: string; // "Zerodha", "Groww", "SBI Mutual Fund"
   category: InvestmentCategory;
   investedAmount: number;
   currentValue: number;
   linkedAccountId?: string;
+  linkedCreditCardId?: string;
+  linkedPaymentAppId?: string;
   purchaseDate: string;
   notes?: string;
   icon?: string;
@@ -522,7 +532,9 @@ export interface Goal {
   color: string;
   accountId?: string;
   linkedAccountId?: string;
-  status: 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  linkedCreditCardId?: string;
+  linkedPaymentAppId?: string;
+  status: 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'CLOSED';
   notes?: string;
   allocations: GoalAllocation[];
   order?: number;

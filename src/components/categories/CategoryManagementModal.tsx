@@ -1,3 +1,4 @@
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Category, TransactionType } from '../../types';
@@ -289,6 +290,8 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   initialType = 'EXPENSE',
   initialCategoryToEdit,
 }) => {
+  useScrollLock(isOpen);
+
   const { categories, addCategory, updateCategory, deleteCategory } = useMoney();
 
   // Navigation mode: 'my_categories' | 'catalogue' | 'form'
@@ -397,7 +400,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     const existing = categories.find(c => c.name.toLowerCase() === tpl.name.toLowerCase());
     const finalName = existing ? `${tpl.name} ${categories.filter(c => c.name.startsWith(tpl.name)).length + 1}` : tpl.name;
 
-    addCategory({
+    const newId = addCategory({
       name: finalName,
       type: tpl.type,
       icon: tpl.icon,
@@ -408,6 +411,12 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     });
 
     showToast(`Added "${finalName}" to your categories!`);
+    
+    if (onSelectCategory) {
+      const newCat = { id: newId, name: finalName, type: tpl.type, icon: tpl.icon, color: tpl.color, isCustom: true, subcategories: [...tpl.subcategories], order: categories.length + 1, updatedAt: Date.now() };
+      onSelectCategory(newCat);
+      onClose();
+    }
   };
 
   const handleSave = () => {
@@ -430,8 +439,12 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         subcategories: subList,
       });
       showToast(`Updated "${name.trim()}"`);
+      if (onSelectCategory) {
+        onSelectCategory({ ...editingCategory, name: name.trim(), type, icon, color, subcategories: subList });
+        onClose();
+      }
     } else {
-      addCategory({
+      const newId = addCategory({
         name: name.trim(),
         type,
         icon,
@@ -441,6 +454,10 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
         order: categories.length + 1,
       });
       showToast(`Created category "${name.trim()}"`);
+      if (onSelectCategory) {
+        onSelectCategory({ id: newId, name: name.trim(), type, icon, color, isCustom: true, subcategories: subList, order: categories.length + 1, updatedAt: Date.now() });
+        onClose();
+      }
     }
 
     setIsFormOpen(false);
@@ -616,16 +633,84 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
 
             {/* Subcategories Editor */}
             <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                Subcategories (Comma separated or add below)
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
+                Subcategories
               </label>
-              <input
-                type="text"
-                value={subcategoriesInput}
-                onChange={e => setSubcategoriesInput(e.target.value)}
-                placeholder="e.g. Dog Food, Vet Visits, Toys, Grooming"
-                className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white outline-none focus:border-emerald-500"
-              />
+              
+              {/* List of current subcategories as interactive pills */}
+              <div className="flex flex-wrap gap-1.5 mb-2.5">
+                {subcategoriesInput.split(',').map(s => s.trim()).filter(Boolean).map((sub, idx) => (
+                  <span
+                    key={`${sub}-${idx}`}
+                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700 text-[11px] font-bold"
+                  >
+                    <span>{sub}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const currentList = subcategoriesInput
+                          .split(',')
+                          .map(s => s.trim())
+                          .filter(Boolean);
+                        currentList.splice(idx, 1);
+                        setSubcategoriesInput(currentList.join(', '));
+                      }}
+                      className="text-slate-400 hover:text-rose-500 rounded-full transition-colors ml-0.5"
+                    >
+                      <X size={12} strokeWidth={2.5} />
+                    </button>
+                  </span>
+                ))}
+                {subcategoriesInput.split(',').map(s => s.trim()).filter(Boolean).length === 0 && (
+                  <p className="text-[11px] text-slate-400 italic">No subcategories defined yet. Add some below!</p>
+                )}
+              </div>
+
+              {/* Input row to add new subcategories */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  value={newSubInput}
+                  onChange={e => setNewSubInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (newSubInput.trim()) {
+                        const currentList = subcategoriesInput
+                          .split(',')
+                          .map(s => s.trim())
+                          .filter(Boolean);
+                        if (!currentList.some(s => s.toLowerCase() === newSubInput.trim().toLowerCase())) {
+                          currentList.push(newSubInput.trim());
+                          setSubcategoriesInput(currentList.join(', '));
+                        }
+                        setNewSubInput('');
+                      }
+                    }
+                  }}
+                  placeholder="Type subcategory (e.g. Dining Out) and press Enter"
+                  className="flex-1 px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white outline-none focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newSubInput.trim()) {
+                      const currentList = subcategoriesInput
+                        .split(',')
+                        .map(s => s.trim())
+                        .filter(Boolean);
+                      if (!currentList.some(s => s.toLowerCase() === newSubInput.trim().toLowerCase())) {
+                        currentList.push(newSubInput.trim());
+                        setSubcategoriesInput(currentList.join(', '));
+                      }
+                      setNewSubInput('');
+                    }
+                  }}
+                  className="p-2.5 rounded-2xl bg-emerald-500/10 dark:bg-emerald-950/60 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-bold hover:bg-emerald-500 hover:text-white transition-all shrink-0"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
             </div>
 
             {/* Action Buttons */}

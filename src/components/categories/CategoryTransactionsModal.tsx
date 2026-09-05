@@ -32,6 +32,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useScrollLock } from '../../hooks/useScrollLock';
 
 interface CategoryTransactionsModalProps {
   isOpen: boolean;
@@ -64,6 +65,8 @@ export const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps>
   onSelectTransaction,
   onOpenAddTransaction,
 }) => {
+  useScrollLock(isOpen);
+
   const { transactions, activeMonth, deleteTransaction, deleteTransactions, accounts, creditCards, categories } = useMoney();
 
   // Search & Filter State
@@ -212,19 +215,21 @@ export const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps>
       })
       .sort((a, b) => {
         // Primary: sort by date descending (newest first)
-        const dateCompare = b.date.localeCompare(a.date);
+        const dateCompare = (b.date || '').localeCompare(a.date || '');
         if (dateCompare !== 0) return dateCompare;
 
         // Secondary: sort by time descending (newest first)
-        const timeA = a.time || '00:00';
-        const timeB = b.time || '00:00';
+        const timeA = a.time || '00:00:00';
+        const timeB = b.time || '00:00:00';
         const timeCompare = timeB.localeCompare(timeA);
         if (timeCompare !== 0) return timeCompare;
 
-        // Tertiary: sort by timestamp descending (newest first)
-        const tsA = a.timestamp || 0;
-        const tsB = b.timestamp || 0;
-        return tsB - tsA;
+        // Tertiary: sort by timestamp / createdAt descending (newest first)
+        const tsA = a.timestamp || a.createdAt || 0;
+        const tsB = b.timestamp || b.createdAt || 0;
+        if (tsB !== tsA) return tsB - tsA;
+
+        return (b.id || '').localeCompare(a.id || '');
       });
   }, [transactions, resolvedCategory, timeFilter, typeFilter, searchQuery, currentMonth]);
 
@@ -570,7 +575,7 @@ export const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps>
                       <div className="text-right shrink-0">
                         <span
                           className={`text-xs sm:text-sm font-black block tracking-tight ${
-                            isIncome ? 'text-emerald-600 dark:text-emerald-400' : isTransfer ? 'text-blue-600 dark:text-blue-400' : 'text-slate-900 dark:text-white'
+                            isIncome ? 'text-emerald-600 dark:text-emerald-400' : isTransfer ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'
                           }`}
                         >
                           {isIncome ? `+${formatINR(tx.amount)}` : isTransfer ? formatINR(tx.amount) : `-${formatINR(tx.amount)}`}
@@ -797,7 +802,7 @@ export const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps>
                 <div className="text-right">
                   <span
                     className={`text-base font-black ${
-                      isIncome ? 'text-emerald-400' : 'text-white'
+                      isIncome ? 'text-emerald-400' : 'text-rose-400'
                     }`}
                   >
                     {isIncome ? `+${formatINR(previewTx.amount)}` : `-${formatINR(previewTx.amount)}`}

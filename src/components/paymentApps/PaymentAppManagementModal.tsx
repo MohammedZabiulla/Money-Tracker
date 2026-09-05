@@ -1,3 +1,4 @@
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { PaymentApp } from '../../types';
@@ -272,6 +273,8 @@ export const PaymentAppManagementModal: React.FC<PaymentAppManagementModalProps>
   onClose,
   onSelectPaymentApp,
 }) => {
+  useScrollLock(isOpen);
+
   const { paymentApps, addPaymentApp, updatePaymentApp, deletePaymentApp } = useMoney();
 
   // Active view tab: 'LIST' | 'CATALOGUE' | 'CUSTOM_STUDIO'

@@ -21,6 +21,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { useScrollLock } from '../../hooks/useScrollLock';
 
 interface TemplateManagementModalProps {
   isOpen: boolean;
@@ -33,6 +34,8 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
   onClose,
   onSelectTemplate,
 }) => {
+  useScrollLock(isOpen);
+
   const {
     templates,
     categories,

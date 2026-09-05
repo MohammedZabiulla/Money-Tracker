@@ -5,6 +5,7 @@ import { formatINR } from '../../lib/currency';
 import { Emblem3D, Category3DIcon, Bank3DIcon, PaymentApp3DIcon } from '../common/IconHelper';
 import { CustomSelect, SelectOption } from '../common/CustomSelect';
 import { CustomDatePicker } from '../common/CustomDatePicker';
+import { ConfirmDeleteModal } from '../common/ConfirmDeleteModal';
 import {
   calculateMonthlyCommitment,
   formatDueBadge,
@@ -34,6 +35,7 @@ import {
   Shield,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { useScrollLock } from '../../hooks/useScrollLock';
 
 interface RecurringManagementModalProps {
   isOpen: boolean;
@@ -177,6 +179,8 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
   onClose,
   initialCreate = false,
 }) => {
+  useScrollLock(isOpen);
+
   const {
     recurring,
     subscriptions,
@@ -184,6 +188,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
     creditCards,
     categories,
     paymentApps,
+    goals,
     addRecurring,
     updateRecurring,
     deleteRecurring,
@@ -198,6 +203,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
   const [isAddingNew, setIsAddingNew] = useState<boolean>(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+  const [deleteConfirmRule, setDeleteConfirmRule] = useState<RecurringTransaction | null>(null);
 
   // Form State
   const [formName, setFormName] = useState<string>('');
@@ -210,11 +216,39 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
   const [formHasEndDate, setFormHasEndDate] = useState<boolean>(false);
   const [formEndDate, setFormEndDate] = useState<string>('');
   const [formCategoryId, setFormCategoryId] = useState<string>('housing_rent');
+  const [formSubcategory, setFormSubcategory] = useState<string>('');
   const [formAccountId, setFormAccountId] = useState<string>('');
   const [formCardId, setFormCardId] = useState<string>('');
   const [formPaymentAppId, setFormPaymentAppId] = useState<string>('');
+  const [formGoalId, setFormGoalId] = useState<string>('');
   const [formAutoRecord, setFormAutoRecord] = useState<boolean>(true);
   const [formNotes, setFormNotes] = useState<string>('');
+
+  // Goal Options for CustomSelect
+  const goalSelectOptions: SelectOption<string>[] = useMemo(() => {
+    const opts: SelectOption<string>[] = [
+      {
+        value: '',
+        label: 'None / Do Not Link to Goal',
+        sublabel: 'Regular expense/income transaction',
+      },
+    ];
+
+    (goals || [])
+      .filter(g => !g.isDeleted && g.status === 'IN_PROGRESS')
+      .forEach(g => {
+        opts.push({
+          value: g.id,
+          label: g.name,
+          sublabel: `Target: ${formatINR(g.targetAmount)} (Saved: ${formatINR(g.currentAmount)})`,
+          rightText: `${Math.round((g.currentAmount / (g.targetAmount || 1)) * 100)}%`,
+          iconColor: g.color,
+          iconName: g.icon || 'Target',
+        });
+      });
+
+    return opts;
+  }, [goals]);
 
   const activeRecurring = useMemo(() => {
     return (recurring || []).filter(r => !r.isDeleted);
@@ -389,6 +423,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
       setFormFrequency(preset.frequency);
       setFormInterval(1);
       setFormCategoryId(preset.categoryId);
+      setFormSubcategory('');
       setFormNotes(preset.tagline || '');
     } else {
       setFormName('');
@@ -397,6 +432,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
       setFormFrequency('MONTHLY');
       setFormInterval(1);
       setFormCategoryId(categories[0]?.id || 'housing_rent');
+      setFormSubcategory('');
       setFormNotes('');
     }
 
@@ -411,6 +447,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
     if (defaultAcc) setFormAccountId(defaultAcc.id);
     if (creditCards.length > 0) setFormCardId('');
     if (paymentApps.length > 0) setFormPaymentAppId(paymentApps[0].id);
+    setFormGoalId('');
 
     setIsAddingNew(true);
   };
@@ -433,9 +470,11 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
     setFormHasEndDate(!!rule.endDate);
     setFormEndDate(rule.endDate || '');
     setFormCategoryId(rule.categoryId || categories[0]?.id || '');
+    setFormSubcategory(rule.subcategory || '');
     setFormAccountId(rule.accountId || '');
     setFormCardId(rule.creditCardId || '');
     setFormPaymentAppId(rule.paymentAppId || '');
+    setFormGoalId(rule.goalId || '');
     setFormAutoRecord(rule.autoRecord !== false);
     setFormNotes(rule.notes || '');
     setIsAddingNew(true);
@@ -466,12 +505,14 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
         endDate: formHasEndDate && formEndDate ? formEndDate : undefined,
         categoryId: formCategoryId,
         categoryName: catObj?.name,
+        subcategory: formSubcategory || undefined,
         accountId: formAccountId || undefined,
         accountName: accObj?.name,
         creditCardId: formCardId || undefined,
         creditCardName: cardObj?.name,
         paymentAppId: formPaymentAppId || undefined,
         paymentAppName: pappObj?.name,
+        goalId: formGoalId || undefined,
         autoRecord: formAutoRecord,
         notes: formNotes.trim() || undefined,
       });
@@ -487,12 +528,14 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
         endDate: formHasEndDate && formEndDate ? formEndDate : undefined,
         categoryId: formCategoryId,
         categoryName: catObj?.name,
+        subcategory: formSubcategory || undefined,
         accountId: formAccountId || undefined,
         accountName: accObj?.name,
         creditCardId: formCardId || undefined,
         creditCardName: cardObj?.name,
         paymentAppId: formPaymentAppId || undefined,
         paymentAppName: pappObj?.name,
+        goalId: formGoalId || undefined,
         autoRecord: formAutoRecord,
         isActive: true,
         notes: formNotes.trim() || undefined,
@@ -759,6 +802,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
                 const isIncome = rule.type === 'INCOME';
                 const isInvest = rule.type === 'INVESTMENT_CONTRIBUTION';
                 const dueInfo = formatDueBadge(rule.nextDueDate);
+                const linkedGoal = goals?.find(g => g.id === rule.goalId);
 
                 return (
                   <div
@@ -783,10 +827,21 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
                             <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
                               {rule.name}
                             </h4>
-                            <span className="text-[11px] text-slate-500 font-medium capitalize">
-                              {rule.frequency.toLowerCase()}
-                              {rule.interval && rule.interval > 1 ? ` (${rule.interval}x)` : ''}
-                            </span>
+                            <div className="flex items-center flex-wrap gap-1 mt-0.5">
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold capitalize">
+                                {rule.frequency.toLowerCase()}
+                                {rule.interval && rule.interval > 1 ? ` (${rule.interval}x)` : ''}
+                              </span>
+                              <span className="text-[10px] text-slate-400">•</span>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded-md">
+                                {rule.categoryName || cat?.name || 'General'}
+                              </span>
+                              {rule.subcategory && (
+                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-extrabold bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded-md">
+                                  {rule.subcategory}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -814,6 +869,13 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
                           {rule.accountName || rule.creditCardName || rule.categoryName || 'Auto'}
                         </span>
                       </div>
+
+                      {linkedGoal && (
+                        <div className="mt-2 flex items-center space-x-1.5 px-2 py-0.5 rounded-xl bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 border border-teal-200/40 dark:border-teal-900/30">
+                          <span className="text-[10px] font-bold">🎯 Goal:</span>
+                          <span className="text-[10px] font-extrabold truncate">{linkedGoal.name}</span>
+                        </div>
+                      )}
 
                       {rule.notes && (
                         <p className="mt-2 text-[11px] text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl italic line-clamp-1">
@@ -848,7 +910,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
                           <Edit2 size={13} />
                         </button>
                         <button
-                          onClick={() => deleteRecurring(rule.id, true)}
+                          onClick={() => setDeleteConfirmRule(rule)}
                           className="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-600 dark:text-rose-400"
                           title="Delete"
                         >
@@ -867,6 +929,7 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
                 const isIncome = rule.type === 'INCOME';
                 const isInvest = rule.type === 'INVESTMENT_CONTRIBUTION';
                 const dueInfo = formatDueBadge(rule.nextDueDate);
+                const linkedGoal = goals?.find(g => g.id === rule.goalId);
 
                 return (
                   <div
@@ -896,12 +959,28 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center space-x-2 text-[11px] text-slate-500 mt-0.5">
-                          <span className="capitalize">{rule.frequency.toLowerCase()}</span>
+                        <div className="flex items-center flex-wrap gap-1.5 text-[11px] text-slate-500 mt-0.5">
+                          <span className="capitalize font-bold">{rule.frequency.toLowerCase()}</span>
                           <span>•</span>
                           <span>{rule.accountName || rule.creditCardName || rule.categoryName}</span>
+                          {rule.subcategory && (
+                            <>
+                              <span>•</span>
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-1 py-0.5 rounded">
+                                {rule.subcategory}
+                              </span>
+                            </>
+                          )}
                           <span>•</span>
                           <span className={`font-bold ${dueInfo.color.split(' ')[0]}`}>{dueInfo.label}</span>
+                          {linkedGoal && (
+                            <>
+                              <span>•</span>
+                              <span className="px-1.5 py-0.5 rounded bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 font-bold text-[9px] flex items-center gap-0.5">
+                                🎯 {linkedGoal.name}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -933,6 +1012,14 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
                         title="Edit"
                       >
                         <Edit2 size={13} />
+                      </button>
+
+                      <button
+                        onClick={() => setDeleteConfirmRule(rule)}
+                        className="p-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100"
+                        title="Delete"
+                      >
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -1065,12 +1152,49 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
                   </label>
                   <CustomSelect
                     value={formCategoryId}
-                    onChange={val => setFormCategoryId(val)}
+                    onChange={val => {
+                      setFormCategoryId(val);
+                      setFormSubcategory('');
+                    }}
                     options={categorySelectOptions}
                     size="md"
                     searchable={true}
                     placeholder="Select category..."
                   />
+
+                  {/* Subcategories Selector */}
+                  {(() => {
+                    const selectedCategoryObj = categories.find(c => c.id === formCategoryId);
+                    if (selectedCategoryObj && selectedCategoryObj.subcategories && selectedCategoryObj.subcategories.length > 0) {
+                      return (
+                        <div className="mt-2">
+                          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1.5 uppercase tracking-wider">
+                            Select Subcategory
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {selectedCategoryObj.subcategories.map((sub, idx) => {
+                              const isSelected = formSubcategory === sub;
+                              return (
+                                <button
+                                  key={`sub_${sub}_${idx}`}
+                                  type="button"
+                                  onClick={() => setFormSubcategory(isSelected ? '' : sub)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                                    isSelected
+                                      ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm ring-2 ring-emerald-500/20'
+                                      : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200/60 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 hover:border-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                  }`}
+                                >
+                                  {sub}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
 
                 {/* Bank Account & Credit Card CustomSelects */}
@@ -1119,6 +1243,20 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
                     options={paymentAppSelectOptions}
                     size="md"
                     placeholder="Select Payment App..."
+                  />
+                </div>
+
+                {/* Linked Savings Goal (Optional) */}
+                <div>
+                  <label className="font-bold text-slate-600 dark:text-slate-300 block mb-1">
+                    Link to Savings Goal (Optional)
+                  </label>
+                  <CustomSelect
+                    value={formGoalId}
+                    onChange={val => setFormGoalId(val)}
+                    options={goalSelectOptions}
+                    size="md"
+                    placeholder="Choose a goal to auto-contribute on payment..."
                   />
                 </div>
 
@@ -1196,6 +1334,30 @@ export const RecurringManagementModal: React.FC<RecurringManagementModalProps> =
             </div>
           </div>
         )}
+        {/* Delete Confirmation Modal */}
+        <ConfirmDeleteModal
+          isOpen={Boolean(deleteConfirmRule)}
+          onClose={() => setDeleteConfirmRule(null)}
+          onConfirm={() => {
+            if (deleteConfirmRule) {
+              deleteRecurring(deleteConfirmRule.id, true);
+              setDeleteConfirmRule(null);
+            }
+          }}
+          title="Delete Recurring Payment Rule?"
+          description="Are you sure you want to delete this recurring payment rule? Future occurrences will no longer be generated. You can restore it from More → Trash Bin."
+          itemDetails={
+            deleteConfirmRule
+              ? {
+                  title: deleteConfirmRule.name,
+                  amount: formatINR(deleteConfirmRule.amount),
+                  subtitle: `${deleteConfirmRule.frequency} • Next: ${deleteConfirmRule.nextDueDate}`,
+                  badge: deleteConfirmRule.type.replace(/_/g, ' '),
+                }
+              : undefined
+          }
+          confirmLabel="Delete Rule"
+        />
       </div>
     </div>
   );

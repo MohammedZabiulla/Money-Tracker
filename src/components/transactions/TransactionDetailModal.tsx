@@ -1,3 +1,4 @@
+import { useScrollLock } from "../../hooks/useScrollLock";
 import React, { useState, useEffect } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Transaction } from '../../types';
@@ -33,7 +34,8 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   onClose,
   onEdit,
 }) => {
-  const { deleteTransaction, addTransaction, updateTransaction, categories, accounts, creditCards } = useMoney();
+  const { deleteTransaction, addTransaction, updateTransaction, categories, accounts, creditCards, goals, investments } = useMoney();
+  useScrollLock(!!transaction);
   const [showRefundForm, setShowRefundForm] = useState(false);
   const [refundAmount, setRefundAmount] = useState<string>('');
 
@@ -118,10 +120,11 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           <div className="flex items-center space-x-2">
             <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full ${
               isIncome ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' :
+              transaction.type === 'INVESTMENT_CONTRIBUTION' ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400' :
               isTransfer ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400' :
               'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
             }`}>
-              {transaction.type === 'CARD_PAYMENT' ? 'Card Bill' : transaction.type === 'MONEY_BORROWED' ? 'Borrowed' : transaction.type === 'MONEY_LENT' ? 'Lent' : isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense'}
+              {transaction.type === 'CARD_PAYMENT' ? 'Card Bill' : transaction.type === 'MONEY_BORROWED' ? 'Borrowed' : transaction.type === 'MONEY_LENT' ? 'Lent' : transaction.type === 'INVESTMENT_CONTRIBUTION' ? 'Invest' : isTransfer ? 'Transfer' : isIncome ? 'Income' : 'Expense'}
             </span>
             <button
               onClick={onClose}
@@ -160,7 +163,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : isTransfer
                   ? 'text-blue-600 dark:text-blue-400'
-                  : 'text-slate-900 dark:text-white'
+                  : 'text-rose-600 dark:text-rose-400'
               }`}>
                 {isIncome ? `+${formatINR(transaction.amount)}` : isTransfer ? formatINR(transaction.amount) : `-${formatINR(transaction.amount)}`}
               </div>
@@ -172,7 +175,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : isTransfer
                   ? 'text-blue-600 dark:text-blue-400'
-                  : 'text-slate-900 dark:text-white'
+                  : 'text-rose-600 dark:text-rose-400'
               }`}
             >
               {isIncome ? `+${formatINR(transaction.amount)}` : isTransfer ? formatINR(transaction.amount) : `-${formatINR(transaction.amount)}`}
@@ -349,6 +352,62 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               )}
             </div>
           )}
+
+          {/* Goal Linkage details (Just like Debt Engagement details) */}
+          {transaction.goalId && (() => {
+            const linkedGoal = goals.find(g => g.id === transaction.goalId);
+            if (!linkedGoal) return null;
+            const percent = Math.min(100, Math.max(0, (linkedGoal.currentAmount / linkedGoal.targetAmount) * 100));
+            return (
+              <div className="bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/10 dark:border-emerald-500/20 rounded-2xl p-3 text-xs space-y-1.5 animate-in fade-in duration-150">
+                <div className="flex justify-between items-center border-b border-emerald-500/10 pb-1">
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400 uppercase text-[9px] tracking-wider">Goal Engagement</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
+                    linkedGoal.status === 'COMPLETED'
+                      ? 'bg-emerald-100/80 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400'
+                      : linkedGoal.status === 'CLOSED'
+                      ? 'bg-slate-100/80 dark:bg-slate-950/50 text-slate-700 dark:text-slate-400'
+                      : 'bg-indigo-100/80 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-400'
+                  }`}>
+                    {linkedGoal.status === 'CLOSED' ? 'Closed' : linkedGoal.status === 'COMPLETED' ? 'Completed' : 'In Progress'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-600 dark:text-slate-300 font-medium">
+                  <span>Goal Name:</span>
+                  <span className="font-black text-slate-800 dark:text-slate-100">{linkedGoal.name}</span>
+                </div>
+                <div className="flex justify-between text-slate-600 dark:text-slate-300 font-medium">
+                  <span>Progress:</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-100">
+                    {formatINR(linkedGoal.currentAmount)} of {formatINR(linkedGoal.targetAmount)} ({percent.toFixed(0)}%)
+                  </span>
+                </div>
+                {/* Visual Progress Bar */}
+                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
+                  <div
+                    className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
+          {transaction.investmentId && (() => {
+            const linkedInvestment = investments.find(i => i.id === transaction.investmentId);
+            if (!linkedInvestment) return null;
+            return (
+              <div className="bg-teal-500/5 dark:bg-teal-500/10 border border-teal-500/10 dark:border-teal-500/20 rounded-2xl p-3 text-xs space-y-1.5 animate-in fade-in duration-150">
+                <div className="flex justify-between items-center border-b border-teal-500/10 pb-1">
+                  <span className="font-bold text-teal-600 dark:text-teal-400 uppercase text-[9px] tracking-wider">Investment Asset</span>
+                </div>
+                <div className="flex justify-between items-center pt-0.5">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">{linkedInvestment.name}</span>
+                  <span className="font-black text-slate-900 dark:text-white">{formatINR(linkedInvestment.currentValue)}</span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Splits Breakdown (Consistent with Hold-to-Preview) */}
           {transaction.splits && transaction.splits.length > 0 && (
@@ -563,7 +622,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         itemDetails={{
           title: transaction.merchantName || transaction.categoryName || transaction.notes || 'Transaction',
           amount: isIncome ? `+${formatINR(transaction.amount)}` : isTransfer ? formatINR(transaction.amount) : `-${formatINR(transaction.amount)}`,
-          subtitle: `${transaction.date} • ${transaction.type.replace(/_/g, ' ')}`,
+          subtitle: `${transaction.date} • ${(typeof transaction.type === 'string' ? transaction.type : 'EXPENSE').replace(/_/g, ' ')}`,
           badge: transaction.categoryName || 'General',
         }}
         confirmLabel="Move to Trash"

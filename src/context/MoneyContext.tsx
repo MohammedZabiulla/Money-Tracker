@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useMoneyStore } from '../store/useMoneyStore';
 import {
   Account,
   CreditCard,
@@ -38,6 +39,7 @@ import {
   recalculateAllBalances,
   computeFinancialSummary,
   getCategorySpendingBreakdown,
+  generateDebtTransactionNarration,
   CategorySpending,
   FinancialSummary,
 } from '../lib/accountingEngine';
@@ -47,7 +49,28 @@ import { DEFAULT_CATEGORIES, DEFAULT_PAYMENT_APPS, DEFAULT_APP_SETTINGS, CARD_TH
 import { createActivityEntry, computeFieldDiffs, computeTransactionDiffs } from '../lib/activityLogger';
 import { formatINR } from '../lib/currency';
 
-interface MoneyContextType {
+// Helper to calculate goal status correctly based on current amount, target amount, and previous status
+const calculateGoalStatus = (
+  currentAmount: number,
+  targetAmount: number,
+  previousStatus: 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'CLOSED',
+  isExplicitReopen = false
+): 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'CLOSED' => {
+  if (isExplicitReopen) {
+    return currentAmount >= targetAmount ? 'COMPLETED' : 'IN_PROGRESS';
+  }
+  if (currentAmount >= targetAmount) {
+    return 'COMPLETED';
+  }
+  if (currentAmount >= 0 && currentAmount <= 0.01) {
+    if (previousStatus === 'COMPLETED' || previousStatus === 'CLOSED') {
+      return 'CLOSED';
+    }
+  }
+  return 'IN_PROGRESS';
+};
+
+export interface MoneyContextType {
   // State
   accounts: Account[];
   creditCards: CreditCard[];
@@ -160,6 +183,7 @@ interface MoneyContextType {
   permanentlyDeleteGoal: (id: string) => void;
   reorderGoals: (orderedIds: string[]) => void;
   allocateToGoal: (goalId: string, amount: number, type: 'DEPOSIT' | 'WITHDRAW', accountId?: string, notes?: string) => void;
+  reopenClosedGoal: (goalId: string) => void;
 
   addLoan: (loan: Omit<Loan, 'id' | 'createdAt' | 'outstandingPrincipal'>) => string;
   updateLoan: (id: string, updates: Partial<Loan>) => void;
@@ -176,7 +200,17 @@ interface MoneyContextType {
   reorderInvestments: (orderedIds: string[]) => void;
 
   addDebt: (debt: Omit<DebtRecord, 'id' | 'createdAt' | 'isSettled' | 'remainingAmount'>) => string;
-  settleDebt: (debtId: string, settleAccountId?: string, paymentAppId?: string) => void;
+  updateDebt: (id: string, updates: Partial<DebtRecord>) => void;
+  unsettleDebt: (debtId: string, txIdsToDelete?: string[]) => void;
+  settleDebt: (
+    debtId: string,
+    settleAccountId?: string,
+    paymentAppId?: string,
+    repayAmount?: number,
+    customDate?: string,
+    customTime?: string,
+    customNotes?: string
+  ) => void;
   deleteDebt: (id: string, softDelete?: boolean) => void;
   restoreDebt: (id: string) => void;
   permanentlyDeleteDebt: (id: string) => void;
@@ -240,9 +274,17 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [undoToast, setUndoToast] = useState<{ message: string; onUndo: () => void } | null>(null);
 
   // One-time migration to fix imported transfers that were missing account linking
+  const hasRunMigrationRef = useRef(false);
   useEffect(() => {
+    if (hasRunMigrationRef.current) return;
+    hasRunMigrationRef.current = true;
+
     let needsMigration = false;
     const migratedTransactions = state.transactions.map(t => {
+      if (typeof t.type !== 'string' || !t.type) {
+        needsMigration = true;
+        return { ...t, type: 'EXPENSE' as TransactionType };
+      }
       if ((t.type === 'TRANSFER' || t.type === 'CARD_PAYMENT') && t.notes) {
         if (t.notes.includes('Transferred Balance') && (t.notes.includes('→') || t.notes.includes('->'))) {
           // If it's missing the other end
@@ -322,7 +364,7 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (needsMigration) {
       setState(s => ({ ...s, transactions: migratedTransactions }));
     }
-  }, [state.transactions, state.accounts, state.creditCards]);
+  }, []);
 
   
   
@@ -448,27 +490,129 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ----------------------------------------------------
   const addTransaction = useCallback((txData: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt' | 'timestamp'>): string => {
     const id = 'tx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-    const dateParts = (txData.date || new Date().toISOString().substring(0, 10)).split('-');
-    const timeParts = (txData.time || '12:00').split(':');
-    const timestamp = new Date(
-      Number(dateParts[0]),
-      Number(dateParts[1]) - 1,
-      Number(dateParts[2]),
-      Number(timeParts[0]),
-      Number(timeParts[1])
-    ).getTime() || Date.now();
+    const now = new Date();
+    const localDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const localTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    
+    const txDateStr = txData.date?.trim() || localDateStr;
+    let txTimeStr = txData.time?.trim() || localTimeStr;
+    
+    const dateParts = txDateStr.split('-').map(Number);
+    const timeParts = txTimeStr.split(':').map(Number);
+    const isToday = txDateStr === localDateStr;
+    const seconds = timeParts[2] !== undefined && !isNaN(timeParts[2]) 
+      ? timeParts[2] 
+      : (isToday ? now.getSeconds() : 0);
+    const ms = isToday ? now.getMilliseconds() : 0;
+
+    if (timeParts.length < 3) {
+      txTimeStr = `${txTimeStr}:${String(seconds).padStart(2, '0')}`;
+    }
+    
+    const parsedDate = new Date(
+      dateParts[0] || now.getFullYear(),
+      (dateParts[1] || (now.getMonth() + 1)) - 1,
+      dateParts[2] || now.getDate(),
+      timeParts[0] !== undefined && !isNaN(timeParts[0]) ? timeParts[0] : now.getHours(),
+      timeParts[1] !== undefined && !isNaN(timeParts[1]) ? timeParts[1] : now.getMinutes(),
+      seconds,
+      ms
+    );
+    const timestamp = !isNaN(parsedDate.getTime()) ? parsedDate.getTime() : Date.now();
+
+    const isLentOrBorrowed = txData.type === 'MONEY_LENT' || txData.type === 'MONEY_BORROWED';
+    const isRepayment = txData.type === 'MONEY_LENT_REPAYMENT' || txData.type === 'MONEY_BORROWED_REPAYMENT';
+    const resolvedPerson = txData.debtPersonName || ((isLentOrBorrowed || isRepayment) ? txData.merchantName : undefined);
+    const debtIdToLink = txData.debtId || (isLentOrBorrowed ? 'debt_' + id : undefined);
+
+    // Generate intelligent auto-narration if notes not provided
+    let finalNotes = txData.notes?.trim();
+    if (!finalNotes && (isLentOrBorrowed || isRepayment) && resolvedPerson) {
+      const targetDebtType = (txData.type === 'MONEY_LENT' || txData.type === 'MONEY_LENT_REPAYMENT') ? 'LENT' : 'BORROWED';
+      const matchingDebt = state.debts.find(d =>
+        (debtIdToLink && d.id === debtIdToLink) ||
+        (d.personName.toLowerCase().trim() === resolvedPerson.toLowerCase().trim() && d.type === targetDebtType)
+      );
+      const remainingBefore = matchingDebt
+        ? (matchingDebt.remainingAmount !== undefined ? matchingDebt.remainingAmount : matchingDebt.amount)
+        : undefined;
+
+      finalNotes = generateDebtTransactionNarration({
+        type: txData.type,
+        personName: resolvedPerson,
+        amount: txData.amount,
+        remainingBeforePayment: remainingBefore,
+        totalDebtAmount: matchingDebt?.amount,
+        existingTransactions: state.transactions,
+        debtId: matchingDebt?.id || debtIdToLink,
+      });
+    }
+
+    const targetGoalObj = txData.goalId ? (state.goals || []).find(g => g.id === txData.goalId) : undefined;
+    if (targetGoalObj && (!finalNotes || 
+                          finalNotes === `Goal Deposit: ${targetGoalObj.name}` || 
+                          finalNotes === `Goal Fund Withdrawn: ${targetGoalObj.name}` ||
+                          finalNotes === `Contribution to goal: ${targetGoalObj.name}` ||
+                          finalNotes === `Withdrawal from goal: ${targetGoalObj.name}` ||
+                          finalNotes === `Deposit to goal: ${targetGoalObj.name}`)) {
+      const isWithdraw = txData.type === 'INCOME';
+      if (isWithdraw) {
+        finalNotes = `Goal: withdrawal from ${targetGoalObj.name}`;
+      } else {
+        const willComplete = (targetGoalObj.currentAmount + txData.amount) >= targetGoalObj.targetAmount;
+        if (willComplete) {
+          finalNotes = `Goal: final payment towards ${targetGoalObj.name}`;
+        } else {
+          const depositCount = (targetGoalObj.allocations || []).filter(a => a.type === 'DEPOSIT').length;
+          finalNotes = `Goal: deposit towards ${targetGoalObj.name} - ${depositCount + 1}`;
+        }
+      }
+    }
+
+    const validTransactionTypes = new Set([
+      'EXPENSE', 'INCOME', 'TRANSFER', 'CARD_PAYMENT',
+      'INVESTMENT_CONTRIBUTION', 'INVESTMENT_WITHDRAWAL',
+      'LOAN_DISBURSEMENT', 'LOAN_REPAYMENT',
+      'MONEY_LENT', 'MONEY_BORROWED', 'MONEY_LENT_REPAYMENT', 'MONEY_BORROWED_REPAYMENT',
+      'REFUND', 'ADJUSTMENT'
+    ]);
+    const safeTxType: TransactionType = typeof txData.type === 'string' && validTransactionTypes.has(txData.type)
+      ? (txData.type as TransactionType)
+      : 'EXPENSE';
 
     const newTx: Transaction = {
       ...txData,
       id,
+      type: safeTxType,
+      notes: finalNotes || txData.notes,
+      date: txDateStr,
+      time: txTimeStr,
       timestamp,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      categoryId: (isLentOrBorrowed || txData.type === 'TRANSFER' || txData.type === 'CARD_PAYMENT' || isRepayment)
+        ? 'cat_transfer'
+        : (txData.categoryId || 'cat_food'),
+      categoryName: txData.type === 'CARD_PAYMENT'
+        ? 'Credit Card Payment'
+        : txData.type === 'TRANSFER'
+        ? 'Transfer'
+        : txData.type === 'MONEY_LENT'
+        ? 'Money Lent'
+        : txData.type === 'MONEY_BORROWED'
+        ? 'Money Borrowed'
+        : txData.type === 'MONEY_LENT_REPAYMENT'
+        ? 'Lent Repayment'
+        : txData.type === 'MONEY_BORROWED_REPAYMENT'
+        ? 'Borrowed Repayment'
+        : txData.categoryName,
+      debtId: debtIdToLink,
+      debtPersonName: resolvedPerson || undefined,
     };
 
-    const typeLabel = txData.type === 'EXPENSE' ? 'Expense' : txData.type === 'INCOME' ? 'Income' : txData.type === 'TRANSFER' ? 'Transfer' : 'Payment';
+    const typeLabel = txData.type === 'EXPENSE' ? 'Expense' : txData.type === 'INCOME' ? 'Income' : txData.type === 'TRANSFER' ? 'Transfer' : txData.type === 'MONEY_LENT' ? 'Money Lent' : txData.type === 'MONEY_BORROWED' ? 'Money Borrowed' : 'Payment';
     const entityTitle = txData.notes || txData.categoryName || txData.merchantName || `${typeLabel} Transaction`;
-    const summaryText = `Added ${typeLabel.toLowerCase()} of ${formatINR(txData.amount)} (${txData.categoryName || 'General'}${txData.merchantName ? ` · ${txData.merchantName}` : ''})`;
+    const summaryText = `Added ${typeLabel.toLowerCase()} of ${formatINR(txData.amount)} (${newTx.categoryName || 'General'}${txData.merchantName ? ` · ${txData.merchantName}` : ''})`;
 
     setState(prev => {
       // Update merchant learning record if merchant provided
@@ -498,11 +642,113 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       }
 
+      // Synchronize linked Debt Record if Lent or Borrowed
+      let updatedDebts = [...(prev.debts || [])];
+      let updatedTransactions = [...prev.transactions];
+
+      if (isLentOrBorrowed && debtIdToLink) {
+        const person = resolvedPerson || 'Person';
+        const existingDebtIdx = updatedDebts.findIndex(d => d.id === debtIdToLink);
+        if (existingDebtIdx >= 0) {
+          updatedDebts[existingDebtIdx] = {
+            ...updatedDebts[existingDebtIdx],
+            amount: txData.amount,
+            remainingAmount: txData.amount,
+            personName: person,
+            dueDate: txData.debtDueDate || updatedDebts[existingDebtIdx].dueDate,
+            notes: txData.notes || updatedDebts[existingDebtIdx].notes,
+            isSettled: false,
+            isDeleted: false,
+          };
+        } else {
+          updatedDebts = [
+            {
+              id: debtIdToLink,
+              type: txData.type === 'MONEY_LENT' ? 'LENT' : 'BORROWED',
+              personName: person,
+              amount: txData.amount,
+              remainingAmount: txData.amount,
+              dueDate: txData.debtDueDate,
+              notes: txData.notes,
+              isSettled: false,
+              createdAt: timestamp || Date.now(),
+            },
+            ...updatedDebts,
+          ];
+        }
+      } else if (isRepayment && (txData.debtId || resolvedPerson)) {
+        const pName = (resolvedPerson || '').toLowerCase().trim();
+        const targetDebtType = txData.type === 'MONEY_LENT_REPAYMENT' ? 'LENT' : 'BORROWED';
+        let matchingDebtId = txData.debtId;
+        updatedDebts = updatedDebts.map(d => {
+          if (d.type === targetDebtType && ((txData.debtId && d.id === txData.debtId) || (!txData.debtId && pName && d.personName.toLowerCase().trim() === pName && !d.isSettled))) {
+            matchingDebtId = d.id;
+            const currentRem = d.remainingAmount !== undefined ? d.remainingAmount : (d.isSettled ? 0 : d.amount);
+            const newRemaining = Math.max(0, currentRem - txData.amount);
+            return {
+              ...d,
+              remainingAmount: newRemaining,
+              isSettled: newRemaining <= 0,
+            };
+          }
+          return d;
+        });
+
+        if (matchingDebtId && !newTx.debtId) {
+          newTx.debtId = matchingDebtId;
+        }
+        if (resolvedPerson && !newTx.debtPersonName) {
+          newTx.debtPersonName = resolvedPerson;
+        }
+
+        // If debt is now settled, also update related transactions
+        const isNowSettled = updatedDebts.some(d => d.id === matchingDebtId && d.isSettled);
+        if (isNowSettled && matchingDebtId) {
+          updatedTransactions = updatedTransactions.map(t =>
+            (t.debtId === matchingDebtId || ('debt_' + t.id) === matchingDebtId) ? { ...t, isDebtSettled: true } : t
+          );
+        }
+      }
+
+      // Synchronize linked Savings Goal if goalId provided
+      let updatedGoals = [...(prev.goals || [])];
+      if (txData.goalId) {
+        const goalIdx = updatedGoals.findIndex(g => g.id === txData.goalId);
+        if (goalIdx >= 0) {
+          const targetGoal = updatedGoals[goalIdx];
+          const isWithdraw = txData.type === 'INCOME';
+          const allocAmount = txData.amount;
+          const newCurrent = isWithdraw
+            ? Math.max(0, targetGoal.currentAmount - allocAmount)
+            : targetGoal.currentAmount + allocAmount;
+          const isCompleted = newCurrent >= targetGoal.targetAmount;
+
+          const newAlloc: GoalAllocation = {
+            id: 'alloc_tx_' + id,
+            amount: allocAmount,
+            date: txDateStr,
+            type: isWithdraw ? 'WITHDRAW' : 'DEPOSIT',
+            notes: finalNotes || `${isWithdraw ? 'Withdrew from' : 'Contributed to'} ${targetGoal.name}`,
+            accountId: txData.accountId,
+            accountName: txData.accountName,
+            timestamp,
+          };
+
+          updatedGoals[goalIdx] = {
+            ...targetGoal,
+            currentAmount: newCurrent,
+            status: calculateGoalStatus(newCurrent, targetGoal.targetAmount, targetGoal.status),
+            allocations: [newAlloc, ...(targetGoal.allocations || [])],
+            updatedAt: Date.now(),
+          };
+        }
+      }
+
       const diffDetails: ActivityChangeDetail[] = [
         { field: 'amount', label: 'Amount', newValue: formatINR(txData.amount) },
         { field: 'type', label: 'Type', newValue: txData.type },
         { field: 'date', label: 'Date', newValue: `${txData.date} ${txData.time || ''}`.trim() },
-        { field: 'categoryName', label: 'Category', newValue: txData.categoryName || 'None' },
+        { field: 'categoryName', label: 'Category', newValue: newTx.categoryName || 'None' },
         { field: 'accountName', label: 'Account / Source', newValue: txData.creditCardName || txData.accountName || 'None' },
       ];
       if (txData.merchantName) diffDetails.push({ field: 'merchantName', label: 'Payee / Merchant', newValue: txData.merchantName });
@@ -511,7 +757,9 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return {
         ...prev,
         merchants: updatedMerchants,
-        transactions: [newTx, ...prev.transactions],
+        debts: updatedDebts,
+        goals: updatedGoals,
+        transactions: [newTx, ...updatedTransactions],
         activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'CREATE', summaryText, {
           entityId: id,
           entityName: entityTitle,
@@ -531,21 +779,130 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       // If date or time was updated, recalculate timestamp
       let newTimestamp = old.timestamp;
-      if (updates.date || updates.time) {
-        const dateParts = ((updates.date || old.date || new Date().toISOString().substring(0, 10))).split('-');
-        const timeParts = ((updates.time || old.time || '12:00')).split(':');
-        newTimestamp = new Date(
-          Number(dateParts[0]),
-          Number(dateParts[1]) - 1,
-          Number(dateParts[2]),
-          Number(timeParts[0]),
-          Number(timeParts[1])
-        ).getTime() || old.timestamp;
+      if (updates.date !== undefined || updates.time !== undefined) {
+        const targetDate = updates.date !== undefined ? updates.date : old.date;
+        const targetTime = updates.time !== undefined ? updates.time : old.time;
+        if (targetDate) {
+          const dateParts = targetDate.split('-').map(Number);
+          const timeParts = (targetTime || '12:00:00').split(':').map(Number);
+          const seconds = timeParts[2] !== undefined && !isNaN(timeParts[2])
+            ? timeParts[2]
+            : (old.timestamp ? new Date(old.timestamp).getSeconds() : 0);
+          const parsed = new Date(
+            dateParts[0],
+            (dateParts[1] || 1) - 1,
+            dateParts[2] || 1,
+            timeParts[0] !== undefined && !isNaN(timeParts[0]) ? timeParts[0] : 12,
+            timeParts[1] !== undefined && !isNaN(timeParts[1]) ? timeParts[1] : 0,
+            seconds
+          );
+          if (!isNaN(parsed.getTime())) {
+            newTimestamp = parsed.getTime();
+          }
+        }
       }
 
-      const updated = { ...old, ...updates, timestamp: newTimestamp, updatedAt: Date.now() };
+      let safeUpdates = { ...updates };
+      if (safeUpdates.type !== undefined) {
+        safeUpdates.type = (typeof safeUpdates.type === 'string' && safeUpdates.type)
+          ? safeUpdates.type
+          : old.type;
+      }
+
+      const updated = { ...old, ...safeUpdates, timestamp: newTimestamp, updatedAt: Date.now() };
       const newTxList = [...prev.transactions];
       newTxList[idx] = updated;
+
+      // Also update linked debt record if exists
+      let updatedDebts = [...(prev.debts || [])];
+      const targetDebtId = updated.debtId || ('debt_' + updated.id);
+      const debtIdx = updatedDebts.findIndex(d => d.id === targetDebtId);
+      if (debtIdx >= 0) {
+        const pName = updated.debtPersonName || updated.merchantName || updatedDebts[debtIdx].personName;
+        updatedDebts[debtIdx] = {
+          ...updatedDebts[debtIdx],
+          amount: updated.amount,
+          remainingAmount: updated.isDebtSettled ? 0 : updated.amount,
+          personName: pName,
+          type: updated.type === 'MONEY_LENT' ? 'LENT' : updated.type === 'MONEY_BORROWED' ? 'BORROWED' : updatedDebts[debtIdx].type,
+          dueDate: updated.debtDueDate || updatedDebts[debtIdx].dueDate,
+          notes: updated.notes || updatedDebts[debtIdx].notes,
+        };
+      }
+
+      // Synchronize linked Savings Goal if goalId changed or amount/type changed
+      let updatedGoals = [...(prev.goals || [])];
+      const oldGoalId = old.goalId;
+      const newGoalId = updated.goalId;
+
+      if (oldGoalId || newGoalId) {
+        if (oldGoalId === newGoalId && oldGoalId) {
+          const gIdx = updatedGoals.findIndex(g => g.id === oldGoalId);
+          if (gIdx >= 0) {
+            const g = updatedGoals[gIdx];
+            const oldDelta = old.type === 'INCOME' ? -old.amount : old.amount;
+            const newDelta = updated.type === 'INCOME' ? -updated.amount : updated.amount;
+            const netDelta = newDelta - oldDelta;
+            const newCurrent = Math.max(0, g.currentAmount + netDelta);
+            const isCompleted = newCurrent >= g.targetAmount;
+            
+            const allocs = (g.allocations || []).map(a => 
+              a.id === 'alloc_tx_' + id
+                ? { ...a, amount: updated.amount, date: updated.date || a.date, type: (updated.type === 'INCOME' ? 'WITHDRAW' : 'DEPOSIT') as 'WITHDRAW' | 'DEPOSIT', notes: updated.notes || a.notes }
+                : a
+            );
+
+            updatedGoals[gIdx] = {
+              ...g,
+              currentAmount: newCurrent,
+              status: calculateGoalStatus(newCurrent, g.targetAmount, g.status),
+              allocations: allocs,
+              updatedAt: Date.now(),
+            };
+          }
+        } else {
+          if (oldGoalId) {
+            const oldIdx = updatedGoals.findIndex(g => g.id === oldGoalId);
+            if (oldIdx >= 0) {
+              const g = updatedGoals[oldIdx];
+              const oldDelta = old.type === 'INCOME' ? -old.amount : old.amount;
+              const newCurrent = Math.max(0, g.currentAmount - oldDelta);
+              updatedGoals[oldIdx] = {
+                ...g,
+                currentAmount: newCurrent,
+                status: calculateGoalStatus(newCurrent, g.targetAmount, g.status),
+                allocations: (g.allocations || []).filter(a => a.id !== 'alloc_tx_' + id),
+                updatedAt: Date.now(),
+              };
+            }
+          }
+          if (newGoalId) {
+            const newIdx = updatedGoals.findIndex(g => g.id === newGoalId);
+            if (newIdx >= 0) {
+              const g = updatedGoals[newIdx];
+              const newDelta = updated.type === 'INCOME' ? -updated.amount : updated.amount;
+              const newCurrent = Math.max(0, g.currentAmount + newDelta);
+              const newAlloc: GoalAllocation = {
+                id: 'alloc_tx_' + id,
+                amount: updated.amount,
+                date: updated.date || new Date().toISOString().substring(0, 10),
+                type: updated.type === 'INCOME' ? 'WITHDRAW' : 'DEPOSIT',
+                notes: updated.notes || `Contributed to ${g.name}`,
+                accountId: updated.accountId,
+                accountName: updated.accountName,
+                timestamp: updated.timestamp || Date.now(),
+              };
+              updatedGoals[newIdx] = {
+                ...g,
+                currentAmount: newCurrent,
+                status: calculateGoalStatus(newCurrent, g.targetAmount, g.status),
+                allocations: [newAlloc, ...(g.allocations || [])],
+                updatedAt: Date.now(),
+              };
+            }
+          }
+        }
+      }
 
       const diffs = computeTransactionDiffs(old, updates);
       const entityTitle = updated.notes || updated.categoryName || updated.merchantName || 'Transaction';
@@ -555,6 +912,8 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       return {
         ...prev,
+        debts: updatedDebts,
+        goals: updatedGoals,
         transactions: newTxList,
         activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'UPDATE', summaryText, {
           entityId: id,
@@ -569,10 +928,75 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setState(prev => {
       const targets = prev.transactions.filter(t => ids.includes(t.id));
       if (targets.length === 0) return prev;
+
+      // Also identify any debts and associated repayment transactions for original debt transactions
+      const targetDebtIds = new Set<string>();
+      const allTxIdsToRestore = new Set<string>(ids);
+
+      targets.forEach(t => {
+        const debtId = t.debtId || ('debt_' + t.id);
+        targetDebtIds.add(debtId);
+        if (t.type === 'MONEY_LENT' || t.type === 'MONEY_BORROWED') {
+          const matchedDebt = (prev.debts || []).find(d =>
+            d.id === debtId || d.id === t.debtId || ('debt_' + t.id) === d.id ||
+            (t.debtPersonName && d.personName.toLowerCase().trim() === t.debtPersonName.toLowerCase().trim() && d.type === (t.type === 'MONEY_LENT' ? 'LENT' : 'BORROWED'))
+          );
+          if (matchedDebt) {
+            targetDebtIds.add(matchedDebt.id);
+            const targetRepayType = t.type === 'MONEY_LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+            prev.transactions.forEach(cand => {
+              if (
+                cand.type === targetRepayType &&
+                (cand.debtId === matchedDebt.id || cand.debtId === t.id || ('debt_' + cand.debtId) === matchedDebt.id ||
+                  (cand.debtPersonName && matchedDebt.personName && cand.debtPersonName.toLowerCase().trim() === matchedDebt.personName.toLowerCase().trim()) ||
+                  (cand.merchantName && matchedDebt.personName && cand.merchantName.toLowerCase().trim() === matchedDebt.personName.toLowerCase().trim()))
+              ) {
+                allTxIdsToRestore.add(cand.id);
+              }
+            });
+          }
+        }
+      });
+
+      let updatedGoals = [...(prev.goals || [])];
+      targets.forEach(target => {
+        if (target.goalId) {
+          const goalIdx = updatedGoals.findIndex(g => g.id === target.goalId);
+          if (goalIdx >= 0) {
+            const g = updatedGoals[goalIdx];
+            if (!(g.allocations || []).some(a => a.id === 'alloc_tx_' + target.id)) {
+              const delta = target.type === 'INCOME' ? -target.amount : target.amount;
+              const newCurrent = g.currentAmount + delta;
+              const newAlloc: GoalAllocation = {
+                id: 'alloc_tx_' + target.id,
+                amount: target.amount,
+                date: target.date,
+                type: target.type === 'INCOME' ? 'WITHDRAW' : 'DEPOSIT',
+                notes: target.notes || 'Restored transaction',
+                accountId: target.accountId,
+                accountName: target.accountName,
+                timestamp: target.timestamp,
+              };
+              updatedGoals[goalIdx] = {
+                ...g,
+                currentAmount: newCurrent,
+                status: newCurrent >= g.targetAmount ? 'COMPLETED' : (newCurrent <= 0.01 ? 'CLOSED' : 'IN_PROGRESS'),
+                allocations: [newAlloc, ...(g.allocations || [])],
+                updatedAt: Date.now(),
+              };
+            }
+          }
+        }
+      });
+
       return {
         ...prev,
+        debts: (prev.debts || []).map(d =>
+          targetDebtIds.has(d.id) ? { ...d, isDeleted: false, deletedAt: undefined } : d
+        ),
+        goals: updatedGoals,
         transactions: prev.transactions.map(t =>
-          ids.includes(t.id) ? { ...t, isDeleted: false, deletedAt: undefined } : t
+          allTxIdsToRestore.has(t.id) ? { ...t, isDeleted: false, deletedAt: undefined } : t
         ),
         activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'RESTORE', `Restored ${targets.length} transactions from Trash`),
       };
@@ -584,22 +1008,182 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const targets = prev.transactions.filter(t => ids.includes(t.id));
       if (targets.length === 0) return prev;
 
-      if (softDelete) {
-        const updatedList = prev.transactions.map(t =>
-          ids.includes(t.id) ? { ...t, isDeleted: true, deletedAt: Date.now() } : t
+      const repaymentTargets = targets.filter(t => t.type === 'MONEY_LENT_REPAYMENT' || t.type === 'MONEY_BORROWED_REPAYMENT');
+      const originalDebtTargets = targets.filter(t => t.type === 'MONEY_LENT' || t.type === 'MONEY_BORROWED');
+      
+      const allOriginalDebtIds = new Set<string>();
+      const allTxIdsToDelete = new Set<string>(ids);
+
+      originalDebtTargets.forEach(target => {
+        const targetDebtId = target.debtId || ('debt_' + target.id);
+        allOriginalDebtIds.add(targetDebtId);
+        const matchedDebt = (prev.debts || []).find(d =>
+          d.id === targetDebtId ||
+          d.id === target.debtId ||
+          ('debt_' + target.id) === d.id ||
+          (target.debtPersonName && d.personName.toLowerCase().trim() === target.debtPersonName.toLowerCase().trim() && d.type === (target.type === 'MONEY_LENT' ? 'LENT' : 'BORROWED'))
         );
+        if (matchedDebt) {
+          allOriginalDebtIds.add(matchedDebt.id);
+          const targetRepayType = target.type === 'MONEY_LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+          prev.transactions.forEach(t => {
+            if (
+              t.type === targetRepayType &&
+              (t.debtId === matchedDebt.id || t.debtId === target.id || ('debt_' + t.debtId) === matchedDebt.id ||
+                (t.debtPersonName && matchedDebt.personName && t.debtPersonName.toLowerCase().trim() === matchedDebt.personName.toLowerCase().trim()) ||
+                (t.merchantName && matchedDebt.personName && t.merchantName.toLowerCase().trim() === matchedDebt.personName.toLowerCase().trim()))
+            ) {
+              allTxIdsToDelete.add(t.id);
+            }
+          });
+        }
+      });
+
+      let updatedDebts = [...(prev.debts || [])];
+
+      // If standalone repayment transactions are deleted without deleting the original debt, reopen the linked debts!
+      const standaloneRepayments = repaymentTargets.filter(t => {
+        const debtId = t.debtId || '';
+        return !allOriginalDebtIds.has(debtId) && !allOriginalDebtIds.has('debt_' + debtId);
+      });
+
+      if (standaloneRepayments.length > 0) {
+        updatedDebts = updatedDebts.map(d => {
+          const matchingRepays = standaloneRepayments.filter(t =>
+            d.id === t.debtId || (!t.debtId && t.debtPersonName && d.personName.toLowerCase().trim() === t.debtPersonName.toLowerCase().trim())
+          );
+          if (matchingRepays.length > 0) {
+            const addedBack = matchingRepays.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+            const currentRemaining = d.remainingAmount !== undefined ? d.remainingAmount : (d.isSettled ? 0 : d.amount);
+            const newRemaining = Math.min(d.amount, currentRemaining + addedBack);
+            return {
+              ...d,
+              isSettled: false,
+              settledAt: undefined,
+              remainingAmount: newRemaining,
+              isDeleted: false,
+            };
+          }
+          return d;
+        });
+      }
+
+      // Synchronize linked Savings Goals
+      let updatedGoals = [...(prev.goals || [])];
+      const txAdjustments = new Map<string, number>();
+
+      targets.forEach(target => {
+        if (target.goalId) {
+          const goalIdx = updatedGoals.findIndex(g => g.id === target.goalId);
+          if (goalIdx >= 0) {
+            const g = updatedGoals[goalIdx];
+            const delta = target.type === 'INCOME' ? -target.amount : target.amount;
+            
+            if (g.status === 'CLOSED' && target.type !== 'INCOME') {
+              // A deposit of a CLOSED goal is deleted
+              
+              // Find only the latest withdrawal allocation to delete (the closing one)
+              const withdrawals = (g.allocations || []).filter(a => a.type === 'WITHDRAW');
+              const lastWithdrawal = [...withdrawals].sort((a, b) => {
+                const dateCompare = b.date.localeCompare(a.date);
+                if (dateCompare !== 0) return dateCompare;
+                return (b.timestamp || 0) - (a.timestamp || 0);
+              })[0];
+              
+              const withdrawTxId = lastWithdrawal && lastWithdrawal.id.startsWith('alloc_tx_')
+                ? lastWithdrawal.id.substring('alloc_tx_'.length)
+                : null;
+
+              if (withdrawTxId) {
+                allTxIdsToDelete.add(withdrawTxId);
+              }
+
+              // Filter out the deleted deposit allocation AND filter out the closing withdrawal allocation
+              const remainingAllocs = (g.allocations || []).filter(a => {
+                if (a.id === 'alloc_tx_' + target.id) return false;
+                if (lastWithdrawal && a.id === lastWithdrawal.id) return false;
+                return true;
+              });
+
+              const remainingDeposits = remainingAllocs.filter(a => a.type === 'DEPOSIT');
+              const remainingWithdrawals = remainingAllocs.filter(a => a.type === 'WITHDRAW');
+              const totalDeposited = remainingDeposits.reduce((sum, a) => sum + (a.amount || 0), 0);
+              const totalWithdrawn = remainingWithdrawals.reduce((sum, a) => sum + (a.amount || 0), 0);
+              const newCurrent = totalDeposited - totalWithdrawn;
+              
+              updatedGoals[goalIdx] = {
+                ...g,
+                currentAmount: newCurrent,
+                status: 'IN_PROGRESS', // Goal re-opens!
+                allocations: remainingAllocs,
+                updatedAt: Date.now(),
+              };
+            } else {
+              if (g.status === 'CLOSED') {
+                const remainingAllocs = (g.allocations || []).filter(a => a.id !== 'alloc_tx_' + target.id);
+                const remainingDeposits = remainingAllocs.filter(a => a.type === 'DEPOSIT');
+                const remainingWithdrawals = remainingAllocs.filter(a => a.type === 'WITHDRAW');
+                const totalDeposited = remainingDeposits.reduce((sum, a) => sum + (a.amount || 0), 0);
+                const totalWithdrawn = remainingWithdrawals.reduce((sum, a) => sum + (a.amount || 0), 0);
+                const newCurrent = totalDeposited - totalWithdrawn;
+                
+                updatedGoals[goalIdx] = {
+                  ...g,
+                  currentAmount: newCurrent,
+                  status: calculateGoalStatus(newCurrent, g.targetAmount, g.status),
+                  allocations: remainingAllocs,
+                  updatedAt: Date.now(),
+                };
+              } else {
+                const newCurrent = Math.max(0, g.currentAmount - delta);
+                updatedGoals[goalIdx] = {
+                  ...g,
+                  currentAmount: newCurrent,
+                  status: calculateGoalStatus(newCurrent, g.targetAmount, g.status),
+                  allocations: (g.allocations || []).filter(a => a.id !== 'alloc_tx_' + target.id),
+                  updatedAt: Date.now(),
+                };
+              }
+            }
+          }
+        }
+      });
+
+      if (softDelete) {
+        let updatedList = prev.transactions.map(t =>
+          allTxIdsToDelete.has(t.id) ? { ...t, isDeleted: true, deletedAt: Date.now() } : t
+        );
+        if (txAdjustments.size > 0) {
+          updatedList = updatedList.map(t => {
+            const adj = txAdjustments.get(t.id);
+            return adj ? { ...t, amount: Math.max(0, t.amount - adj), updatedAt: Date.now() } : t;
+          });
+        }
         showUndo(`${targets.length} transactions moved to Trash`, () => {
-          restoreTransactions(ids);
+          restoreTransactions(Array.from(allTxIdsToDelete));
         });
         return {
           ...prev,
+          debts: updatedDebts.map(d =>
+            allOriginalDebtIds.has(d.id) ? { ...d, isDeleted: true, deletedAt: Date.now() } : d
+          ),
+          goals: updatedGoals,
           transactions: updatedList,
           activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'DELETE', `Moved ${targets.length} transactions to Trash`),
         };
       } else {
+        let updatedTxs = prev.transactions.filter(t => !allTxIdsToDelete.has(t.id));
+        if (txAdjustments.size > 0) {
+          updatedTxs = updatedTxs.map(t => {
+            const adj = txAdjustments.get(t.id);
+            return adj ? { ...t, amount: Math.max(0, t.amount - adj), updatedAt: Date.now() } : t;
+          });
+        }
         return {
           ...prev,
-          transactions: prev.transactions.filter(t => !ids.includes(t.id)),
+          debts: updatedDebts.filter(d => !allOriginalDebtIds.has(d.id)),
+          goals: updatedGoals,
+          transactions: updatedTxs,
           activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'PURGE', `Permanently deleted ${targets.length} transactions`),
         };
       }
@@ -612,16 +1196,164 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!target) return prev;
 
       const entityTitle = target.notes || target.categoryName || target.merchantName || 'Transaction';
+      const isRepaymentTx = target.type === 'MONEY_LENT_REPAYMENT' || target.type === 'MONEY_BORROWED_REPAYMENT';
+      const isOriginalDebtTx = target.type === 'MONEY_LENT' || target.type === 'MONEY_BORROWED';
+      const targetDebtId = target.debtId || ('debt_' + target.id);
+
+      let updatedDebts = [...(prev.debts || [])];
+      const allTxIdsToDelete = new Set<string>([id]);
+      const allDebtIdsToDelete = new Set<string>();
+
+      if (isRepaymentTx) {
+        // Find the linked debt and reopen it
+        updatedDebts = updatedDebts.map(d => {
+          const isMatch = d.id === target.debtId || (!target.debtId && target.debtPersonName && d.personName.toLowerCase().trim() === target.debtPersonName.toLowerCase().trim());
+          if (isMatch) {
+            const currentRemaining = d.remainingAmount !== undefined ? d.remainingAmount : (d.isSettled ? 0 : d.amount);
+            const newRemaining = Math.min(d.amount, currentRemaining + (Number(target.amount) || 0));
+            return {
+              ...d,
+              isSettled: false,
+              settledAt: undefined,
+              remainingAmount: newRemaining,
+              isDeleted: false,
+            };
+          }
+          return d;
+        });
+      } else if (isOriginalDebtTx) {
+        allDebtIdsToDelete.add(targetDebtId);
+        const matchedDebt = (prev.debts || []).find(d =>
+          d.id === targetDebtId ||
+          d.id === target.debtId ||
+          ('debt_' + target.id) === d.id ||
+          (target.debtPersonName && d.personName.toLowerCase().trim() === target.debtPersonName.toLowerCase().trim() && d.type === (target.type === 'MONEY_LENT' ? 'LENT' : 'BORROWED'))
+        );
+
+        if (matchedDebt) {
+          allDebtIdsToDelete.add(matchedDebt.id);
+        }
+
+        const targetRepayType = target.type === 'MONEY_LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+        const personName = matchedDebt?.personName || target.debtPersonName || target.merchantName;
+
+        // Also delete all associated repayment transactions for this lent/borrowed record
+        prev.transactions.forEach(t => {
+          if (
+            t.type === targetRepayType &&
+            (t.debtId === targetDebtId || t.debtId === id || (matchedDebt && t.debtId === matchedDebt.id) ||
+              (personName && t.debtPersonName && t.debtPersonName.toLowerCase().trim() === personName.toLowerCase().trim()) ||
+              (personName && t.merchantName && t.merchantName.toLowerCase().trim() === personName.toLowerCase().trim()))
+          ) {
+            allTxIdsToDelete.add(t.id);
+          }
+        });
+
+        if (softDelete) {
+          updatedDebts = updatedDebts.map(d =>
+            allDebtIdsToDelete.has(d.id) ? { ...d, isDeleted: true, deletedAt: Date.now() } : d
+          );
+        } else {
+          updatedDebts = updatedDebts.filter(d => !allDebtIdsToDelete.has(d.id) && d.id !== ('debt_' + id));
+        }
+      }
+
+      // Synchronize linked Savings Goal if goalId exists
+      let updatedGoals = [...(prev.goals || [])];
+      let updatedTransactionsFromGoalSync = null;
+      if (target.goalId) {
+        const goalIdx = updatedGoals.findIndex(g => g.id === target.goalId);
+        if (goalIdx >= 0) {
+          const g = updatedGoals[goalIdx];
+          const delta = target.type === 'INCOME' ? -target.amount : target.amount;
+          
+          if (g.status === 'CLOSED' && target.type !== 'INCOME') {
+            // A deposit of a CLOSED goal is deleted
+            
+            // Find only the latest withdrawal allocation to delete (the closing one)
+            const withdrawals = (g.allocations || []).filter(a => a.type === 'WITHDRAW');
+            const lastWithdrawal = [...withdrawals].sort((a, b) => {
+              const dateCompare = b.date.localeCompare(a.date);
+              if (dateCompare !== 0) return dateCompare;
+              return (b.timestamp || 0) - (a.timestamp || 0);
+            })[0];
+            
+            const withdrawTxId = lastWithdrawal && lastWithdrawal.id.startsWith('alloc_tx_')
+              ? lastWithdrawal.id.substring('alloc_tx_'.length)
+              : null;
+
+            if (withdrawTxId) {
+              allTxIdsToDelete.add(withdrawTxId);
+            }
+
+            // Filter out the deleted deposit allocation AND filter out the closing withdrawal allocation
+            const remainingAllocs = (g.allocations || []).filter(a => {
+              if (a.id === 'alloc_tx_' + target.id) return false;
+              if (lastWithdrawal && a.id === lastWithdrawal.id) return false;
+              return true;
+            });
+
+            const remainingDeposits = remainingAllocs.filter(a => a.type === 'DEPOSIT');
+            const remainingWithdrawals = remainingAllocs.filter(a => a.type === 'WITHDRAW');
+            const totalDeposited = remainingDeposits.reduce((sum, a) => sum + (a.amount || 0), 0);
+            const totalWithdrawn = remainingWithdrawals.reduce((sum, a) => sum + (a.amount || 0), 0);
+            const newCurrent = totalDeposited - totalWithdrawn;
+            
+            updatedGoals[goalIdx] = {
+              ...g,
+              currentAmount: newCurrent,
+              status: 'IN_PROGRESS', // Goal re-opens!
+              allocations: remainingAllocs,
+              updatedAt: Date.now(),
+            };
+          } else {
+            if (g.status === 'CLOSED') {
+              const remainingAllocs = (g.allocations || []).filter(a => a.id !== 'alloc_tx_' + target.id);
+              const remainingDeposits = remainingAllocs.filter(a => a.type === 'DEPOSIT');
+              const remainingWithdrawals = remainingAllocs.filter(a => a.type === 'WITHDRAW');
+              const totalDeposited = remainingDeposits.reduce((sum, a) => sum + (a.amount || 0), 0);
+              const totalWithdrawn = remainingWithdrawals.reduce((sum, a) => sum + (a.amount || 0), 0);
+              const newCurrent = totalDeposited - totalWithdrawn;
+              
+              updatedGoals[goalIdx] = {
+                ...g,
+                currentAmount: newCurrent,
+                status: calculateGoalStatus(newCurrent, g.targetAmount, g.status),
+                allocations: remainingAllocs,
+                updatedAt: Date.now(),
+              };
+            } else {
+              const newCurrent = Math.max(0, g.currentAmount - delta);
+              updatedGoals[goalIdx] = {
+                ...g,
+                currentAmount: newCurrent,
+                status: calculateGoalStatus(newCurrent, g.targetAmount, g.status),
+                allocations: (g.allocations || []).filter(a => a.id !== 'alloc_tx_' + target.id),
+                updatedAt: Date.now(),
+              };
+            }
+          }
+        }
+      }
 
       if (softDelete) {
-        const updatedList = prev.transactions.map(t =>
-          t.id === id ? { ...t, isDeleted: true, deletedAt: Date.now() } : t
+        let updatedList = prev.transactions.map(t =>
+          allTxIdsToDelete.has(t.id) ? { ...t, isDeleted: true, deletedAt: Date.now() } : t
         );
+        if (updatedTransactionsFromGoalSync) {
+          updatedList = updatedList.map(t =>
+            t.id === updatedTransactionsFromGoalSync
+              ? { ...t, amount: Math.max(0, t.amount - target.amount), updatedAt: Date.now() }
+              : t
+          );
+        }
         showUndo('Transaction moved to Trash', () => {
           restoreTransaction(id);
         });
         return {
           ...prev,
+          debts: updatedDebts,
+          goals: updatedGoals,
           transactions: updatedList,
           activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'DELETE', `Moved transaction (${formatINR(target.amount)}) to Trash`, {
             entityId: id,
@@ -629,9 +1361,19 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }),
         };
       } else {
+        let updatedTxs = prev.transactions.filter(t => !allTxIdsToDelete.has(t.id));
+        if (updatedTransactionsFromGoalSync) {
+          updatedTxs = updatedTxs.map(t =>
+            t.id === updatedTransactionsFromGoalSync
+              ? { ...t, amount: Math.max(0, t.amount - target.amount), updatedAt: Date.now() }
+              : t
+          );
+        }
         return {
           ...prev,
-          transactions: prev.transactions.filter(t => t.id !== id),
+          debts: updatedDebts,
+          goals: updatedGoals,
+          transactions: updatedTxs,
           activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'PURGE', `Permanently deleted transaction (${formatINR(target.amount)})`, {
             entityId: id,
             entityName: entityTitle,
@@ -644,10 +1386,75 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const restoreTransaction = useCallback((id: string) => {
     setState(prev => {
       const target = prev.transactions.find(t => t.id === id);
+      const isOriginalDebtTx = target && (target.type === 'MONEY_LENT' || target.type === 'MONEY_BORROWED');
+      const targetDebtId = target ? (target.debtId || ('debt_' + target.id)) : '';
+
+      const allTxIdsToRestore = new Set<string>([id]);
+      const allDebtIdsToRestore = new Set<string>();
+
+      if (isOriginalDebtTx && target) {
+        allDebtIdsToRestore.add(targetDebtId);
+        const matchedDebt = (prev.debts || []).find(d =>
+          d.id === targetDebtId ||
+          d.id === target.debtId ||
+          ('debt_' + target.id) === d.id ||
+          (target.debtPersonName && d.personName.toLowerCase().trim() === target.debtPersonName.toLowerCase().trim() && d.type === (target.type === 'MONEY_LENT' ? 'LENT' : 'BORROWED'))
+        );
+
+        if (matchedDebt) {
+          allDebtIdsToRestore.add(matchedDebt.id);
+        }
+
+        const targetRepayType = target.type === 'MONEY_LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+        const personName = matchedDebt?.personName || target.debtPersonName || target.merchantName;
+
+        prev.transactions.forEach(t => {
+          if (
+            t.type === targetRepayType &&
+            (t.debtId === targetDebtId || t.debtId === id || (matchedDebt && t.debtId === matchedDebt.id) ||
+              (personName && t.debtPersonName && t.debtPersonName.toLowerCase().trim() === personName.toLowerCase().trim()) ||
+              (personName && t.merchantName && t.merchantName.toLowerCase().trim() === personName.toLowerCase().trim()))
+          ) {
+            allTxIdsToRestore.add(t.id);
+          }
+        });
+      }
+
+      let updatedGoals = [...(prev.goals || [])];
+      if (target && target.goalId) {
+        const goalIdx = updatedGoals.findIndex(g => g.id === target.goalId);
+        if (goalIdx >= 0) {
+          const g = updatedGoals[goalIdx];
+          const delta = target.type === 'INCOME' ? -target.amount : target.amount;
+          const newCurrent = g.currentAmount + delta;
+          const newAlloc: GoalAllocation = {
+            id: 'alloc_tx_' + target.id,
+            amount: target.amount,
+            date: target.date,
+            type: target.type === 'INCOME' ? 'WITHDRAW' : 'DEPOSIT',
+            notes: target.notes || 'Restored transaction',
+            accountId: target.accountId,
+            accountName: target.accountName,
+            timestamp: target.timestamp,
+          };
+          updatedGoals[goalIdx] = {
+            ...g,
+            currentAmount: newCurrent,
+            status: calculateGoalStatus(newCurrent, g.targetAmount, g.status),
+            allocations: [newAlloc, ...(g.allocations || [])],
+            updatedAt: Date.now(),
+          };
+        }
+      }
+
       return {
         ...prev,
+        debts: (prev.debts || []).map(d =>
+          allDebtIdsToRestore.has(d.id) ? { ...d, isDeleted: false, deletedAt: undefined } : d
+        ),
+        goals: updatedGoals,
         transactions: prev.transactions.map(t =>
-          t.id === id ? { ...t, isDeleted: false, deletedAt: undefined } : t
+          allTxIdsToRestore.has(t.id) ? { ...t, isDeleted: false, deletedAt: undefined } : t
         ),
         activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'RESTORE', `Restored transaction from Trash`, {
           entityId: id,
@@ -660,9 +1467,44 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const permanentlyDeleteTransaction = useCallback((id: string) => {
     setState(prev => {
       const target = prev.transactions.find(t => t.id === id);
+      const isOriginalDebtTx = target && (target.type === 'MONEY_LENT' || target.type === 'MONEY_BORROWED');
+      const targetDebtId = target ? (target.debtId || ('debt_' + target.id)) : '';
+
+      const allTxIdsToPurge = new Set<string>([id]);
+      const allDebtIdsToPurge = new Set<string>();
+
+      if (isOriginalDebtTx && target) {
+        allDebtIdsToPurge.add(targetDebtId);
+        const matchedDebt = (prev.debts || []).find(d =>
+          d.id === targetDebtId ||
+          d.id === target.debtId ||
+          ('debt_' + target.id) === d.id ||
+          (target.debtPersonName && d.personName.toLowerCase().trim() === target.debtPersonName.toLowerCase().trim() && d.type === (target.type === 'MONEY_LENT' ? 'LENT' : 'BORROWED'))
+        );
+
+        if (matchedDebt) {
+          allDebtIdsToPurge.add(matchedDebt.id);
+        }
+
+        const targetRepayType = target.type === 'MONEY_LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+        const personName = matchedDebt?.personName || target.debtPersonName || target.merchantName;
+
+        prev.transactions.forEach(t => {
+          if (
+            t.type === targetRepayType &&
+            (t.debtId === targetDebtId || t.debtId === id || (matchedDebt && t.debtId === matchedDebt.id) ||
+              (personName && t.debtPersonName && t.debtPersonName.toLowerCase().trim() === personName.toLowerCase().trim()) ||
+              (personName && t.merchantName && t.merchantName.toLowerCase().trim() === personName.toLowerCase().trim()))
+          ) {
+            allTxIdsToPurge.add(t.id);
+          }
+        });
+      }
+
       return {
         ...prev,
-        transactions: prev.transactions.filter(t => t.id !== id),
+        debts: (prev.debts || []).filter(d => !allDebtIdsToPurge.has(d.id) && d.id !== ('debt_' + id)),
+        transactions: prev.transactions.filter(t => !allTxIdsToPurge.has(t.id)),
         activityLogs: appendActivityLog(prev.activityLogs, 'TRANSACTION', 'PURGE', `Permanently removed transaction`, {
           entityId: id,
           entityName: target?.categoryName || 'Transaction',
@@ -1806,13 +2648,50 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
 
     if (result.newTransactions.length > 0) {
-      setState(prev => ({
-        ...prev,
-        recurring: result.updatedRecurring,
-        subscriptions: result.updatedSubscriptions,
-        transactions: [...result.newTransactions, ...prev.transactions],
-        activityLogs: appendActivityLog(prev.activityLogs, 'SYSTEM', 'CREATE', `Auto-processed ${result.newTransactions.length} due recurring transaction(s)`),
-      }));
+      setState(prev => {
+        let updatedGoals = [...(prev.goals || [])];
+        result.newTransactions.forEach(tx => {
+          if (tx.goalId) {
+            const goalIdx = updatedGoals.findIndex(g => g.id === tx.goalId);
+            if (goalIdx >= 0) {
+              const targetGoal = updatedGoals[goalIdx];
+              const isWithdraw = tx.type === 'INCOME';
+              const allocAmount = tx.amount;
+              const newCurrent = isWithdraw
+                ? Math.max(0, targetGoal.currentAmount - allocAmount)
+                : targetGoal.currentAmount + allocAmount;
+
+              const newAlloc: GoalAllocation = {
+                id: 'alloc_tx_' + tx.id,
+                amount: allocAmount,
+                date: tx.date || targetDate,
+                type: isWithdraw ? 'WITHDRAW' : 'DEPOSIT',
+                notes: tx.notes || `${isWithdraw ? 'Withdrew from' : 'Contributed to'} ${targetGoal.name}`,
+                accountId: tx.accountId,
+                accountName: tx.accountName,
+                timestamp: tx.timestamp || Date.now(),
+              };
+
+              updatedGoals[goalIdx] = {
+                ...targetGoal,
+                currentAmount: newCurrent,
+                status: calculateGoalStatus(newCurrent, targetGoal.targetAmount, targetGoal.status),
+                allocations: [newAlloc, ...(targetGoal.allocations || [])],
+                updatedAt: Date.now(),
+              };
+            }
+          }
+        });
+
+        return {
+          ...prev,
+          recurring: result.updatedRecurring,
+          subscriptions: result.updatedSubscriptions,
+          goals: updatedGoals,
+          transactions: [...result.newTransactions, ...prev.transactions],
+          activityLogs: appendActivityLog(prev.activityLogs, 'SYSTEM', 'CREATE', `Auto-processed ${result.newTransactions.length} due recurring transaction(s)`),
+        };
+      });
     }
 
     return result;
@@ -1824,15 +2703,10 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     
     if (!rule && !sub) return '';
 
-    const todayStr = new Date().toISOString().substring(0, 10);
-    const dateParts = todayStr.split('-');
-    const timestamp = new Date(
-      Number(dateParts[0]),
-      Number(dateParts[1]) - 1,
-      Number(dateParts[2]),
-      9,
-      0
-    ).getTime() || Date.now();
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const localTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const timestamp = now.getTime();
 
     if (rule) {
       const txId = 'tx_rec_manual_' + rule.id + '_' + Date.now();
@@ -1841,7 +2715,7 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         amount: rule.amount,
         type: rule.type,
         date: todayStr,
-        time: '09:00',
+        time: localTimeStr,
         timestamp,
         categoryId: rule.categoryId,
         categoryName: rule.categoryName,
@@ -1857,6 +2731,7 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         paymentAppName: rule.paymentAppName,
         recurringId: rule.id,
         recurringName: rule.name,
+        goalId: rule.goalId,
         isAutoRecorded: true,
         notes: rule.notes ? `${rule.notes} (Recurring: ${rule.name})` : `Recorded recurring payment: ${rule.name}`,
         tags: Array.from(new Set([...(rule.tags || []), '#recurring'])),
@@ -1866,19 +2741,54 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const nextDueDate = calculateNextDueDate(rule.nextDueDate || todayStr, rule.frequency, rule.interval || 1);
 
-      setState(prev => ({
-        ...prev,
-        transactions: [newTx, ...prev.transactions],
-        recurring: (prev.recurring || []).map(r =>
-          r.id === recurringOrSubId
-            ? { ...r, nextDueDate, lastGeneratedDate: todayStr, updatedAt: Date.now() }
-            : r
-        ),
-        activityLogs: appendActivityLog(prev.activityLogs, 'RECURRING', 'CREATE', `Manually executed recurring payment for "${rule.name}" (${formatINR(rule.amount)})`, {
-          entityId: txId,
-          entityName: rule.name,
-        }),
-      }));
+      setState(prev => {
+        let updatedGoals = [...(prev.goals || [])];
+        if (newTx.goalId) {
+          const goalIdx = updatedGoals.findIndex(g => g.id === newTx.goalId);
+          if (goalIdx >= 0) {
+            const targetGoal = updatedGoals[goalIdx];
+            const isWithdraw = newTx.type === 'INCOME';
+            const allocAmount = newTx.amount;
+            const newCurrent = isWithdraw
+              ? Math.max(0, targetGoal.currentAmount - allocAmount)
+              : targetGoal.currentAmount + allocAmount;
+
+            const newAlloc: GoalAllocation = {
+              id: 'alloc_tx_' + newTx.id,
+              amount: allocAmount,
+              date: newTx.date,
+              type: isWithdraw ? 'WITHDRAW' : 'DEPOSIT',
+              notes: newTx.notes || `${isWithdraw ? 'Withdrew from' : 'Contributed to'} ${targetGoal.name}`,
+              accountId: newTx.accountId,
+              accountName: newTx.accountName,
+              timestamp: newTx.timestamp || Date.now(),
+            };
+
+            updatedGoals[goalIdx] = {
+              ...targetGoal,
+              currentAmount: newCurrent,
+              status: calculateGoalStatus(newCurrent, targetGoal.targetAmount, targetGoal.status),
+              allocations: [newAlloc, ...(targetGoal.allocations || [])],
+              updatedAt: Date.now(),
+            };
+          }
+        }
+
+        return {
+          ...prev,
+          transactions: [newTx, ...prev.transactions],
+          goals: updatedGoals,
+          recurring: (prev.recurring || []).map(r =>
+            r.id === recurringOrSubId
+              ? { ...r, nextDueDate, lastGeneratedDate: todayStr, updatedAt: Date.now() }
+              : r
+          ),
+          activityLogs: appendActivityLog(prev.activityLogs, 'RECURRING', 'CREATE', `Manually executed recurring payment for "${rule.name}" (${formatINR(rule.amount)})`, {
+            entityId: txId,
+            entityName: rule.name,
+          }),
+        };
+      });
 
       return txId;
     }
@@ -1890,7 +2800,7 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         amount: sub.amount,
         type: 'EXPENSE',
         date: todayStr,
-        time: '09:00',
+        time: localTimeStr,
         timestamp,
         categoryId: sub.categoryId || 'subscriptions',
         categoryName: sub.categoryName || 'Subscriptions',
@@ -1901,6 +2811,9 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         creditCardName: sub.creditCardName,
         paymentAppId: sub.paymentAppId,
         paymentAppName: sub.paymentAppName,
+        recurringId: sub.id,
+        recurringName: sub.name,
+        goalId: sub.goalId,
         isAutoRecorded: true,
         notes: sub.notes ? `${sub.notes} (Subscription: ${sub.name})` : `Recorded subscription payment: ${sub.name}`,
         tags: ['#subscription', '#recurring'],
@@ -1910,19 +2823,54 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const nextBillingDate = calculateNextDueDate(sub.nextBillingDate || todayStr, sub.frequency, 1);
 
-      setState(prev => ({
-        ...prev,
-        transactions: [newTx, ...prev.transactions],
-        subscriptions: (prev.subscriptions || []).map(s =>
-          s.id === recurringOrSubId
-            ? { ...s, nextBillingDate, lastGeneratedDate: todayStr }
-            : s
-        ),
-        activityLogs: appendActivityLog(prev.activityLogs, 'SUBSCRIPTION', 'CREATE', `Manually executed subscription payment for "${sub.name}" (${formatINR(sub.amount)})`, {
-          entityId: txId,
-          entityName: sub.name,
-        }),
-      }));
+      setState(prev => {
+        let updatedGoals = [...(prev.goals || [])];
+        if (newTx.goalId) {
+          const goalIdx = updatedGoals.findIndex(g => g.id === newTx.goalId);
+          if (goalIdx >= 0) {
+            const targetGoal = updatedGoals[goalIdx];
+            const isWithdraw = newTx.type === 'INCOME';
+            const allocAmount = newTx.amount;
+            const newCurrent = isWithdraw
+              ? Math.max(0, targetGoal.currentAmount - allocAmount)
+              : targetGoal.currentAmount + allocAmount;
+
+            const newAlloc: GoalAllocation = {
+              id: 'alloc_tx_' + newTx.id,
+              amount: allocAmount,
+              date: newTx.date,
+              type: isWithdraw ? 'WITHDRAW' : 'DEPOSIT',
+              notes: newTx.notes || `${isWithdraw ? 'Withdrew from' : 'Contributed to'} ${targetGoal.name}`,
+              accountId: newTx.accountId,
+              accountName: newTx.accountName,
+              timestamp: newTx.timestamp || Date.now(),
+            };
+
+            updatedGoals[goalIdx] = {
+              ...targetGoal,
+              currentAmount: newCurrent,
+              status: calculateGoalStatus(newCurrent, targetGoal.targetAmount, targetGoal.status),
+              allocations: [newAlloc, ...(targetGoal.allocations || [])],
+              updatedAt: Date.now(),
+            };
+          }
+        }
+
+        return {
+          ...prev,
+          transactions: [newTx, ...prev.transactions],
+          goals: updatedGoals,
+          subscriptions: (prev.subscriptions || []).map(s =>
+            s.id === recurringOrSubId
+              ? { ...s, nextBillingDate, lastGeneratedDate: todayStr }
+              : s
+          ),
+          activityLogs: appendActivityLog(prev.activityLogs, 'SUBSCRIPTION', 'CREATE', `Manually executed subscription payment for "${sub.name}" (${formatINR(sub.amount)})`, {
+            entityId: txId,
+            entityName: sub.name,
+          }),
+        };
+      });
 
       return txId;
     }
@@ -2103,12 +3051,27 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const date = now.toISOString().substring(0, 10);
     const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
+    let finalAllocNotes = notes;
+    if (!finalAllocNotes) {
+      if (type === 'WITHDRAW') {
+        finalAllocNotes = `Goal: withdrawal from ${goal.name}`;
+      } else {
+        const willComplete = (goal.currentAmount + amount) >= goal.targetAmount;
+        if (willComplete) {
+          finalAllocNotes = `Goal: final payment towards ${goal.name}`;
+        } else {
+          const depositCount = (goal.allocations || []).filter(a => a.type === 'DEPOSIT').length;
+          finalAllocNotes = `Goal: deposit towards ${goal.name} - ${depositCount + 1}`;
+        }
+      }
+    }
+
     const newAllocation: GoalAllocation = {
       id: 'alloc_' + Date.now(),
       amount,
       date,
       type,
-      notes: notes || (type === 'DEPOSIT' ? `Deposit to goal: ${goal.name}` : `Withdrawal from goal: ${goal.name}`),
+      notes: finalAllocNotes,
       accountId,
       accountName: acc?.name,
       timestamp: Date.now(),
@@ -2126,7 +3089,7 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           categoryId: 'savings_investment',
           categoryName: 'Savings & Investments',
           goalId,
-          notes: `Goal Deposit: ${goal.name}${notes ? ` (${notes})` : ''}`,
+          notes: finalAllocNotes,
         });
       } else {
         addTransaction({
@@ -2139,37 +3102,93 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           categoryId: 'other_income',
           categoryName: 'Goal Withdrawal',
           goalId,
-          notes: `Goal Fund Withdrawn: ${goal.name}${notes ? ` (${notes})` : ''}`,
+          notes: finalAllocNotes,
         });
       }
-    }
+    } else {
+      setState(prev => {
+        const target = (prev.goals || []).find(g => g.id === goalId);
+        if (!target) return prev;
+        const newCurrent = type === 'DEPOSIT' ? target.currentAmount + amount : Math.max(0, target.currentAmount - amount);
+        const isCompleted = newCurrent >= target.targetAmount;
 
+        return {
+          ...prev,
+          goals: (prev.goals || []).map(g =>
+            g.id === goalId
+              ? {
+                  ...g,
+                  currentAmount: newCurrent,
+                  status: calculateGoalStatus(newCurrent, target.targetAmount, target.status),
+                  allocations: [newAllocation, ...(g.allocations || [])],
+                  updatedAt: Date.now(),
+                }
+              : g
+          ),
+          activityLogs: appendActivityLog(prev.activityLogs, 'GOAL', 'ALLOCATE', `${type === 'DEPOSIT' ? 'Added' : 'Withdrew'} ${formatINR(amount)} ${type === 'DEPOSIT' ? 'to' : 'from'} goal "${goal.name}"`, {
+            entityId: goalId,
+            entityName: goal.name,
+          }),
+        };
+      });
+    }
+  }, [state.goals, state.accounts, addTransaction]);
+
+  const reopenClosedGoal = useCallback((goalId: string) => {
     setState(prev => {
-      const target = (prev.goals || []).find(g => g.id === goalId);
-      if (!target) return prev;
-      const newCurrent = type === 'DEPOSIT' ? target.currentAmount + amount : Math.max(0, target.currentAmount - amount);
-      const isCompleted = newCurrent >= target.targetAmount;
+      const goal = (prev.goals || []).find(g => g.id === goalId);
+      if (!goal) return prev;
+
+      const withdrawals = (goal.allocations || []).filter(a => a.type === 'WITHDRAW');
+      const lastWithdrawal = [...withdrawals].sort((a, b) => {
+        const dateCompare = b.date.localeCompare(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        return (b.timestamp || 0) - (a.timestamp || 0);
+      })[0];
+
+      const remainingAllocations = (goal.allocations || []).filter(a => !lastWithdrawal || a.id !== lastWithdrawal.id);
+
+      const txIdsToDelete = new Set<string>();
+      if (lastWithdrawal && lastWithdrawal.id.startsWith('alloc_tx_')) {
+        txIdsToDelete.add(lastWithdrawal.id.substring('alloc_tx_'.length));
+      }
+
+      const remainingDeposits = remainingAllocations.filter(a => a.type === 'DEPOSIT');
+      const remainingWithdrawals = remainingAllocations.filter(a => a.type === 'WITHDRAW');
+      const totalDeposited = remainingDeposits.reduce((sum, a) => sum + (a.amount || 0), 0);
+      const totalWithdrawn = remainingWithdrawals.reduce((sum, a) => sum + (a.amount || 0), 0);
+      const newCurrent = totalDeposited - totalWithdrawn;
+
+      const isCompleted = newCurrent >= goal.targetAmount;
+      const newStatus = calculateGoalStatus(newCurrent, goal.targetAmount, goal.status, true);
+
+      const updatedGoals = (prev.goals || []).map(g =>
+        g.id === goalId
+          ? {
+              ...g,
+              currentAmount: newCurrent,
+              status: newStatus,
+              allocations: remainingAllocations,
+              updatedAt: Date.now(),
+            }
+          : g
+      );
+
+      const updatedTransactions = prev.transactions.map(t =>
+        txIdsToDelete.has(t.id) ? { ...t, isDeleted: true, deletedAt: Date.now() } : t
+      );
 
       return {
         ...prev,
-        goals: (prev.goals || []).map(g =>
-          g.id === goalId
-            ? {
-                ...g,
-                currentAmount: newCurrent,
-                status: isCompleted ? 'COMPLETED' : g.status === 'COMPLETED' ? 'IN_PROGRESS' : g.status,
-                allocations: [newAllocation, ...(g.allocations || [])],
-                updatedAt: Date.now(),
-              }
-            : g
-        ),
-        activityLogs: appendActivityLog(prev.activityLogs, 'GOAL', 'ALLOCATE', `${type === 'DEPOSIT' ? 'Added' : 'Withdrew'} ${formatINR(amount)} ${type === 'DEPOSIT' ? 'to' : 'from'} goal "${goal.name}"`, {
+        goals: updatedGoals,
+        transactions: updatedTransactions,
+        activityLogs: appendActivityLog(prev.activityLogs, 'GOAL', 'UPDATE', `Reopened goal "${goal.name}" (recalculated savings: ${formatINR(newCurrent)})`, {
           entityId: goalId,
           entityName: goal.name,
         }),
       };
     });
-  }, [state.goals, state.accounts, addTransaction]);
+  }, []);
 
   // ----------------------------------------------------
   // LOANS & EMI
@@ -2436,59 +3455,226 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return id;
   }, []);
 
-  const settleDebt = useCallback((debtId: string, settleAccountId?: string, paymentAppId?: string) => {
+  const updateDebt = useCallback((id: string, updates: Partial<DebtRecord>) => {
+    setState(prev => {
+      const idx = (prev.debts || []).findIndex(d => d.id === id);
+      if (idx === -1) return prev;
+      const old = prev.debts[idx];
+      const updated: DebtRecord = { ...old, ...updates };
+
+      if (updates.amount !== undefined && updates.remainingAmount === undefined) {
+        if (old.isSettled || updated.isSettled) {
+          updated.remainingAmount = 0;
+        } else {
+          const diff = updates.amount - old.amount;
+          updated.remainingAmount = Math.max(0, (old.remainingAmount ?? old.amount) + diff);
+        }
+      }
+
+      const updatedDebts = [...prev.debts];
+      updatedDebts[idx] = updated;
+
+      // Cascade update to linked transactions
+      const updatedTransactions = prev.transactions.map(t => {
+        if (t.debtId === id || ('debt_' + t.id) === id) {
+          return {
+            ...t,
+            amount: updates.amount !== undefined ? updates.amount : t.amount,
+            debtPersonName: updates.personName !== undefined ? updates.personName : t.debtPersonName,
+            merchantName: updates.personName !== undefined ? updates.personName : t.merchantName,
+            debtDueDate: updates.dueDate !== undefined ? updates.dueDate : t.debtDueDate,
+            notes: updates.notes !== undefined ? updates.notes : t.notes,
+            isDebtSettled: updated.isSettled,
+          };
+        }
+        return t;
+      });
+
+      return {
+        ...prev,
+        debts: updatedDebts,
+        transactions: updatedTransactions,
+        activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'UPDATE', `Updated debt record for ${updated.personName}`, {
+          entityId: id,
+          entityName: updated.personName,
+        }),
+      };
+    });
+  }, []);
+
+  const unsettleDebt = useCallback((debtId: string, txIdsToDelete?: string[]) => {
+    setState(prev => {
+      const debt = (prev.debts || []).find(d => d.id === debtId);
+      if (!debt) return prev;
+
+      const targetRepayType = debt.type === 'LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+      const toDeleteSet = txIdsToDelete !== undefined ? new Set(txIdsToDelete) : null;
+
+      // Find all active repayments for this debt
+      const activeRepayments = prev.transactions.filter(
+        t =>
+          !t.isDeleted &&
+          t.type === targetRepayType &&
+          (t.debtId ? t.debtId === debtId : (t.debtPersonName && t.debtPersonName.toLowerCase().trim() === debt.personName.toLowerCase().trim()))
+      );
+
+      const shouldDeleteTx = (txId: string) => {
+        if (toDeleteSet !== null) {
+          return toDeleteSet.has(txId);
+        }
+        return false;
+      };
+
+      const keptRepayments = activeRepayments.filter(t => !shouldDeleteTx(t.id));
+      const totalKeptAmount = keptRepayments.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+      const calculatedRemaining = Math.max(0, debt.amount - totalKeptAmount);
+      const newRemainingAmount = calculatedRemaining > 0 ? calculatedRemaining : debt.amount;
+
+      return {
+        ...prev,
+        debts: (prev.debts || []).map(d =>
+          d.id === debtId
+            ? {
+                ...d,
+                isSettled: false,
+                settledAt: undefined,
+                remainingAmount: newRemainingAmount,
+              }
+            : d
+        ),
+        transactions: prev.transactions.map(t => {
+          if (
+            !t.isDeleted &&
+            t.type === targetRepayType &&
+            (t.debtId ? t.debtId === debtId : (t.debtPersonName && t.debtPersonName.toLowerCase().trim() === debt.personName.toLowerCase().trim()))
+          ) {
+            if (shouldDeleteTx(t.id)) {
+              return { ...t, isDeleted: true, deletedAt: Date.now(), isDebtSettled: false };
+            }
+            return { ...t, isDebtSettled: false };
+          }
+          // For the original debt transaction, mark isDebtSettled as false
+          if (t.debtId === debtId || ('debt_' + t.id) === debtId) {
+            return { ...t, isDebtSettled: false };
+          }
+          return t;
+        }),
+        activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'UPDATE', `Reopened debt record for ${debt.personName}`, {
+          entityId: debtId,
+          entityName: debt.personName,
+        }),
+      };
+    });
+  }, []);
+
+  const settleDebt = useCallback((
+    debtId: string,
+    settleAccountId?: string,
+    paymentAppId?: string,
+    repayAmount?: number,
+    customDate?: string,
+    customTime?: string,
+    customNotes?: string
+  ) => {
     const debt = state.debts.find(d => d.id === debtId);
     if (!debt) return;
 
     const acc = state.accounts.find(a => a.id === settleAccountId);
     const now = new Date();
-    const date = now.toISOString().substring(0, 10);
-    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const localDate = customDate || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const localTime = customTime || `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const currentRemaining = debt.remainingAmount !== undefined ? debt.remainingAmount : (debt.isSettled ? 0 : debt.amount);
+    const amountToPay = (repayAmount !== undefined && repayAmount > 0)
+      ? Math.min(repayAmount, currentRemaining)
+      : currentRemaining;
+
+    if (amountToPay <= 0) return;
+
+    const isFullSettlement = amountToPay >= currentRemaining;
+    const newRemaining = Math.max(0, currentRemaining - amountToPay);
+
+    const autoRepayNote = customNotes?.trim() || generateDebtTransactionNarration({
+      type: debt.type === 'LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT',
+      personName: debt.personName,
+      amount: amountToPay,
+      remainingBeforePayment: currentRemaining,
+      totalDebtAmount: debt.amount,
+      existingTransactions: state.transactions,
+      debtId: debt.id,
+      isSettledDirectly: isFullSettlement,
+    });
 
     if (settleAccountId) {
       if (debt.type === 'LENT') {
         addTransaction({
-          amount: debt.remainingAmount,
+          amount: amountToPay,
           type: 'MONEY_LENT_REPAYMENT',
-          date,
-          time,
+          date: localDate,
+          time: localTime,
           accountId: settleAccountId,
           accountName: acc?.name || 'Account',
           paymentAppId,
+          debtId: debt.id,
           debtPersonName: debt.personName,
-          notes: `Settled lent money from ${debt.personName}`,
+          notes: autoRepayNote,
         });
       } else {
         addTransaction({
-          amount: debt.remainingAmount,
+          amount: amountToPay,
           type: 'MONEY_BORROWED_REPAYMENT',
-          date,
-          time,
+          date: localDate,
+          time: localTime,
           accountId: settleAccountId,
           accountName: acc?.name || 'Account',
           paymentAppId,
+          debtId: debt.id,
           debtPersonName: debt.personName,
-          notes: `Repaid borrowed money to ${debt.personName}`,
+          notes: autoRepayNote,
         });
       }
+    } else {
+      // Direct adjustment without bank account transaction
+      setState(prev => ({
+        ...prev,
+        debts: prev.debts.map(d =>
+          d.id === debtId ? { ...d, remainingAmount: newRemaining, isSettled: isFullSettlement } : d
+        ),
+        transactions: prev.transactions.map(t =>
+          (t.debtId === debtId || ('debt_' + t.id) === debtId) ? { ...t, isDebtSettled: isFullSettlement } : t
+        ),
+        activityLogs: appendActivityLog(
+          prev.activityLogs,
+          'DEBT',
+          isFullSettlement ? 'SETTLE' : 'UPDATE',
+          autoRepayNote,
+          {
+            entityId: debtId,
+            entityName: debt.personName,
+          }
+        ),
+      }));
     }
-
-    setState(prev => ({
-      ...prev,
-      debts: prev.debts.map(d =>
-        d.id === debtId ? { ...d, remainingAmount: 0, isSettled: true } : d
-      ),
-      activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'SETTLE', `Settled debt with ${debt.personName} (${formatINR(debt.remainingAmount)})`, {
-        entityId: debtId,
-        entityName: debt.personName,
-      }),
-    }));
   }, [state.debts, state.accounts, addTransaction]);
 
   const deleteDebt = useCallback((id: string, softDelete = true) => {
     setState(prev => {
       const target = (prev.debts || []).find(d => d.id === id);
       if (!target) return prev;
+
+      const isMatchingDebtTx = (t: Transaction) => {
+        if (t.debtId === id || ('debt_' + t.id) === id || t.id === id.replace('debt_', '')) return true;
+        if (t.debtId && (t.debtId === id.replace('debt_', '') || ('debt_' + t.debtId) === id)) return true;
+        const targetRepayType = target.type === 'LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+        const targetOrigType = target.type === 'LENT' ? 'MONEY_LENT' : 'MONEY_BORROWED';
+        if (t.type === targetRepayType || t.type === targetOrigType) {
+          if (t.debtId === id || ('debt_' + t.id) === id || t.id === id.replace('debt_', '')) return true;
+          if (t.debtId && (t.debtId === id.replace('debt_', '') || ('debt_' + t.debtId) === id)) return true;
+          if (t.debtPersonName && target.personName && t.debtPersonName.toLowerCase().trim() === target.personName.toLowerCase().trim()) return true;
+          if (t.merchantName && target.personName && t.merchantName.toLowerCase().trim() === target.personName.toLowerCase().trim()) return true;
+        }
+        return false;
+      };
 
       if (softDelete) {
         showUndo(`Debt record for "${target.personName}" moved to Trash`, () => {
@@ -2499,6 +3685,11 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           debts: (prev.debts || []).map(d =>
             d.id === id ? { ...d, isDeleted: true, deletedAt: Date.now() } : d
           ),
+          transactions: prev.transactions.map(t =>
+            isMatchingDebtTx(t)
+              ? { ...t, isDeleted: true, deletedAt: Date.now() }
+              : t
+          ),
           activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'DELETE', `Moved debt record for "${target.personName}" to Trash`, {
             entityId: id,
             entityName: target.personName,
@@ -2508,6 +3699,7 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return {
           ...prev,
           debts: (prev.debts || []).filter(d => d.id !== id),
+          transactions: prev.transactions.filter(t => !isMatchingDebtTx(t)),
           activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'PURGE', `Permanently deleted debt record for "${target.personName}"`, {
             entityId: id,
             entityName: target.personName,
@@ -2520,10 +3712,31 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const restoreDebt = useCallback((id: string) => {
     setState(prev => {
       const target = (prev.debts || []).find(d => d.id === id);
+      const isMatchingDebtTx = (t: Transaction) => {
+        if (t.debtId === id || ('debt_' + t.id) === id || t.id === id.replace('debt_', '')) return true;
+        if (t.debtId && (t.debtId === id.replace('debt_', '') || ('debt_' + t.debtId) === id)) return true;
+        if (target) {
+          const targetRepayType = target.type === 'LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+          const targetOrigType = target.type === 'LENT' ? 'MONEY_LENT' : 'MONEY_BORROWED';
+          if (t.type === targetRepayType || t.type === targetOrigType) {
+            if (t.debtId === id || ('debt_' + t.id) === id || t.id === id.replace('debt_', '')) return true;
+            if (t.debtId && (t.debtId === id.replace('debt_', '') || ('debt_' + t.debtId) === id)) return true;
+            if (t.debtPersonName && target.personName && t.debtPersonName.toLowerCase().trim() === target.personName.toLowerCase().trim()) return true;
+            if (t.merchantName && target.personName && t.merchantName.toLowerCase().trim() === target.personName.toLowerCase().trim()) return true;
+          }
+        }
+        return false;
+      };
+
       return {
         ...prev,
         debts: (prev.debts || []).map(d =>
           d.id === id ? { ...d, isDeleted: false, deletedAt: undefined } : d
+        ),
+        transactions: prev.transactions.map(t =>
+          isMatchingDebtTx(t)
+            ? { ...t, isDeleted: false, deletedAt: undefined }
+            : t
         ),
         activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'RESTORE', `Restored debt record for "${target?.personName || 'Person'}" from Trash`, {
           entityId: id,
@@ -2536,9 +3749,26 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const permanentlyDeleteDebt = useCallback((id: string) => {
     setState(prev => {
       const target = (prev.debts || []).find(d => d.id === id);
+      const isMatchingDebtTx = (t: Transaction) => {
+        if (t.debtId === id || ('debt_' + t.id) === id || t.id === id.replace('debt_', '')) return true;
+        if (t.debtId && (t.debtId === id.replace('debt_', '') || ('debt_' + t.debtId) === id)) return true;
+        if (target) {
+          const targetRepayType = target.type === 'LENT' ? 'MONEY_LENT_REPAYMENT' : 'MONEY_BORROWED_REPAYMENT';
+          const targetOrigType = target.type === 'LENT' ? 'MONEY_LENT' : 'MONEY_BORROWED';
+          if (t.type === targetRepayType || t.type === targetOrigType) {
+            if (t.debtId === id || ('debt_' + t.id) === id || t.id === id.replace('debt_', '')) return true;
+            if (t.debtId && (t.debtId === id.replace('debt_', '') || ('debt_' + t.debtId) === id)) return true;
+            if (t.debtPersonName && target.personName && t.debtPersonName.toLowerCase().trim() === target.personName.toLowerCase().trim()) return true;
+            if (t.merchantName && target.personName && t.merchantName.toLowerCase().trim() === target.personName.toLowerCase().trim()) return true;
+          }
+        }
+        return false;
+      };
+
       return {
         ...prev,
         debts: (prev.debts || []).filter(d => d.id !== id),
+        transactions: prev.transactions.filter(t => !isMatchingDebtTx(t)),
         activityLogs: appendActivityLog(prev.activityLogs, 'DEBT', 'PURGE', `Permanently deleted debt record for "${target?.personName || 'Person'}"`, {
           entityId: id,
           entityName: target?.personName,
@@ -2870,141 +4100,283 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setState({ ...restored, activityLogs: newLogs });
   }, []);
 
+  const contextValue: MoneyContextType = useMemo(() => ({
+    accounts: computedAccounts,
+    creditCards: computedCards,
+    categories: state.categories,
+    merchants: state.merchants,
+    paymentApps: state.paymentApps,
+    transactions: state.transactions,
+    templates: state.templates || [],
+    recurring: (state.recurring || []).filter(r => !r.isDeleted),
+    subscriptions: (state.subscriptions || []).filter(s => !s.isDeleted),
+    budgets: (state.budgets || []).filter(b => !b.isDeleted),
+    goals: (state.goals || []).filter(g => !g.isDeleted),
+    loans: computedLoans,
+    investments: computedInvestments,
+    debts: computedDebts,
+    reconciliations: state.reconciliations,
+    settings: state.settings,
+    activityLogs: state.activityLogs || [],
+    summary,
+    categorySpending,
+    activeMonth,
+    setActiveMonth,
+    trashCount,
+    deletedTransactions,
+    deletedAccounts,
+    deletedCreditCards,
+    deletedBudgets,
+    deletedSubscriptions,
+    deletedRecurring,
+    deletedGoals,
+    deletedLoans,
+    deletedInvestments,
+    deletedDebts,
+    isLocked,
+    unlockApp,
+    lockApp,
+    undoToast,
+    dismissUndoToast,
+    addTransaction,
+    updateTransaction,
+    deleteTransaction,
+    deleteTransactions,
+    restoreTransaction,
+    restoreTransactions,
+    permanentlyDeleteTransaction,
+    emptyTrash,
+    emptyAllTrash,
+    restoreAllTrash,
+    addTemplate,
+    updateTemplate,
+    deleteTemplate,
+    toggleFavoriteTemplate,
+    recordFromTemplate,
+    saveTransactionAsTemplate,
+    addAccount,
+    updateAccount,
+    deleteAccount,
+    restoreAccount,
+    permanentlyDeleteAccount,
+    reorderAccounts,
+    setAccountSortPreference,
+    addCreditCard,
+    updateCreditCard,
+    deleteCreditCard,
+    restoreCreditCard,
+    permanentlyDeleteCreditCard,
+    reorderCreditCards,
+    setCardSortPreference,
+    payCreditCardBill,
+    convertAccountToCreditCard,
+    convertCreditCardToAccount,
+    addBudget,
+    updateBudget,
+    deleteBudget,
+    restoreBudget,
+    permanentlyDeleteBudget,
+    reorderBudgets,
+    addSubscription,
+    updateSubscription,
+    deleteSubscription,
+    restoreSubscription,
+    permanentlyDeleteSubscription,
+    addRecurring,
+    updateRecurring,
+    deleteRecurring,
+    restoreRecurring,
+    permanentlyDeleteRecurring,
+    toggleRecurringActive,
+    processDuePayments,
+    triggerManualRecurringExecution,
+    addGoal,
+    updateGoal,
+    deleteGoal,
+    restoreGoal,
+    permanentlyDeleteGoal,
+    reorderGoals,
+    allocateToGoal,
+    reopenClosedGoal,
+    addLoan,
+    updateLoan,
+    deleteLoan,
+    restoreLoan,
+    permanentlyDeleteLoan,
+    payLoanEMI,
+    addInvestment,
+    updateInvestment,
+    deleteInvestment,
+    restoreInvestment,
+    permanentlyDeleteInvestment,
+    reorderInvestments,
+    addDebt,
+    updateDebt,
+    unsettleDebt,
+    settleDebt,
+    deleteDebt,
+    restoreDebt,
+    permanentlyDeleteDebt,
+    reconcileAccount,
+    addCategory,
+    updateCategory,
+    deleteCategory,
+    reorderCategories,
+    addPaymentApp,
+    updatePaymentApp,
+    deletePaymentApp,
+    reorderPaymentApps,
+    updateSettings,
+    logActivity,
+    clearActivityLogs,
+    exportActivityLogs,
+    resetToDemoData,
+    clearAllData,
+    clearTransactionsData,
+    loadBackupState,
+  }), [
+    computedAccounts,
+    computedCards,
+    state.categories,
+    state.merchants,
+    state.paymentApps,
+    state.transactions,
+    state.templates,
+    state.recurring,
+    state.subscriptions,
+    state.budgets,
+    state.goals,
+    computedLoans,
+    computedInvestments,
+    computedDebts,
+    state.reconciliations,
+    state.settings,
+    state.activityLogs,
+    summary,
+    categorySpending,
+    activeMonth,
+    setActiveMonth,
+    trashCount,
+    deletedTransactions,
+    deletedAccounts,
+    deletedCreditCards,
+    deletedBudgets,
+    deletedSubscriptions,
+    deletedRecurring,
+    deletedGoals,
+    deletedLoans,
+    deletedInvestments,
+    deletedDebts,
+    isLocked,
+    unlockApp,
+    lockApp,
+    undoToast,
+    dismissUndoToast,
+    addTransaction,
+    updateTransaction,
+    deleteTransaction,
+    deleteTransactions,
+    restoreTransaction,
+    restoreTransactions,
+    permanentlyDeleteTransaction,
+    emptyTrash,
+    emptyAllTrash,
+    restoreAllTrash,
+    addTemplate,
+    updateTemplate,
+    deleteTemplate,
+    toggleFavoriteTemplate,
+    recordFromTemplate,
+    saveTransactionAsTemplate,
+    addAccount,
+    updateAccount,
+    deleteAccount,
+    restoreAccount,
+    permanentlyDeleteAccount,
+    reorderAccounts,
+    setAccountSortPreference,
+    addCreditCard,
+    updateCreditCard,
+    deleteCreditCard,
+    restoreCreditCard,
+    permanentlyDeleteCreditCard,
+    reorderCreditCards,
+    setCardSortPreference,
+    payCreditCardBill,
+    convertAccountToCreditCard,
+    convertCreditCardToAccount,
+    addBudget,
+    updateBudget,
+    deleteBudget,
+    restoreBudget,
+    permanentlyDeleteBudget,
+    reorderBudgets,
+    addSubscription,
+    updateSubscription,
+    deleteSubscription,
+    restoreSubscription,
+    permanentlyDeleteSubscription,
+    addRecurring,
+    updateRecurring,
+    deleteRecurring,
+    restoreRecurring,
+    permanentlyDeleteRecurring,
+    toggleRecurringActive,
+    processDuePayments,
+    triggerManualRecurringExecution,
+    addGoal,
+    updateGoal,
+    deleteGoal,
+    restoreGoal,
+    permanentlyDeleteGoal,
+    reorderGoals,
+    allocateToGoal,
+    reopenClosedGoal,
+    addLoan,
+    updateLoan,
+    deleteLoan,
+    restoreLoan,
+    permanentlyDeleteLoan,
+    payLoanEMI,
+    addInvestment,
+    updateInvestment,
+    deleteInvestment,
+    restoreInvestment,
+    permanentlyDeleteInvestment,
+    reorderInvestments,
+    addDebt,
+    updateDebt,
+    unsettleDebt,
+    settleDebt,
+    deleteDebt,
+    restoreDebt,
+    permanentlyDeleteDebt,
+    reconcileAccount,
+    addCategory,
+    updateCategory,
+    deleteCategory,
+    reorderCategories,
+    addPaymentApp,
+    updatePaymentApp,
+    deletePaymentApp,
+    reorderPaymentApps,
+    updateSettings,
+    logActivity,
+    clearActivityLogs,
+    exportActivityLogs,
+    resetToDemoData,
+    clearAllData,
+    clearTransactionsData,
+    loadBackupState,
+  ]);
+
+  // Keep Zustand store continuously and synchronously up-to-date
+  useEffect(() => {
+    useMoneyStore.setState(contextValue, true);
+  }, [contextValue]);
+
   return (
-    <MoneyContext.Provider
-      value={{
-        accounts: computedAccounts,
-        creditCards: computedCards,
-        categories: state.categories,
-        merchants: state.merchants,
-        paymentApps: state.paymentApps,
-        transactions: state.transactions,
-        templates: state.templates || [],
-        recurring: (state.recurring || []).filter(r => !r.isDeleted),
-        subscriptions: (state.subscriptions || []).filter(s => !s.isDeleted),
-        budgets: (state.budgets || []).filter(b => !b.isDeleted),
-        goals: (state.goals || []).filter(g => !g.isDeleted),
-        loans: computedLoans,
-        investments: computedInvestments,
-        debts: computedDebts,
-        reconciliations: state.reconciliations,
-        settings: state.settings,
-        activityLogs: state.activityLogs || [],
-        summary,
-        categorySpending,
-        activeMonth,
-        setActiveMonth,
-        trashCount,
-        deletedTransactions,
-        deletedAccounts,
-        deletedCreditCards,
-        deletedBudgets,
-        deletedSubscriptions,
-        deletedRecurring,
-        deletedGoals,
-        deletedLoans,
-        deletedInvestments,
-        deletedDebts,
-        isLocked,
-        unlockApp,
-        lockApp,
-        undoToast,
-        dismissUndoToast,
-        addTransaction,
-        updateTransaction,
-        deleteTransaction,
-        deleteTransactions,
-        restoreTransaction,
-        restoreTransactions,
-        permanentlyDeleteTransaction,
-        emptyTrash,
-        emptyAllTrash,
-        restoreAllTrash,
-        addTemplate,
-        updateTemplate,
-        deleteTemplate,
-        toggleFavoriteTemplate,
-        recordFromTemplate,
-        saveTransactionAsTemplate,
-        addAccount,
-        updateAccount,
-        deleteAccount,
-        restoreAccount,
-        permanentlyDeleteAccount,
-        reorderAccounts,
-        setAccountSortPreference,
-        addCreditCard,
-        updateCreditCard,
-        deleteCreditCard,
-        restoreCreditCard,
-        permanentlyDeleteCreditCard,
-        reorderCreditCards,
-        setCardSortPreference,
-        payCreditCardBill,
-        convertAccountToCreditCard,
-        convertCreditCardToAccount,
-        addBudget,
-        updateBudget,
-        deleteBudget,
-        restoreBudget,
-        permanentlyDeleteBudget,
-        reorderBudgets,
-        addSubscription,
-        updateSubscription,
-        deleteSubscription,
-        restoreSubscription,
-        permanentlyDeleteSubscription,
-        addRecurring,
-        updateRecurring,
-        deleteRecurring,
-        restoreRecurring,
-        permanentlyDeleteRecurring,
-        toggleRecurringActive,
-        processDuePayments,
-        triggerManualRecurringExecution,
-        addGoal,
-        updateGoal,
-        deleteGoal,
-        restoreGoal,
-        permanentlyDeleteGoal,
-        reorderGoals,
-        allocateToGoal,
-        addLoan,
-        updateLoan,
-        deleteLoan,
-        restoreLoan,
-        permanentlyDeleteLoan,
-        payLoanEMI,
-        addInvestment,
-        updateInvestment,
-        deleteInvestment,
-        restoreInvestment,
-        permanentlyDeleteInvestment,
-        reorderInvestments,
-        addDebt,
-        settleDebt,
-        deleteDebt,
-        restoreDebt,
-        permanentlyDeleteDebt,
-        reconcileAccount,
-        addCategory,
-        updateCategory,
-        deleteCategory,
-        reorderCategories,
-        addPaymentApp,
-        updatePaymentApp,
-        deletePaymentApp,
-        reorderPaymentApps,
-        updateSettings,
-        logActivity,
-        clearActivityLogs,
-        exportActivityLogs,
-        resetToDemoData,
-        clearAllData,
-        clearTransactionsData,
-        loadBackupState,
-      }}
-    >
+    <MoneyContext.Provider value={contextValue}>
       {children}
     </MoneyContext.Provider>
   );

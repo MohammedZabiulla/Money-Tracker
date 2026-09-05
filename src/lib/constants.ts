@@ -217,15 +217,6 @@ export const DEFAULT_CATEGORIES: Category[] = [
     order: 20,
   },
   {
-    id: 'investments_expense',
-    name: 'Investments & Savings',
-    type: 'EXPENSE',
-    icon: 'TrendingUp',
-    color: '#10B981',
-    subcategories: ['SIP / Mutual Funds', 'Stock Market Shares', 'Digital Gold / SGB', 'PPF / NPS Contribution', 'Fixed Deposit / RD', 'Crypto & Web3'],
-    order: 21,
-  },
-  {
     id: 'misc_expense',
     name: 'Miscellaneous Expenses',
     type: 'EXPENSE',

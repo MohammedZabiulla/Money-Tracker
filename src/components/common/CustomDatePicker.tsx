@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Calendar as CalendarIcon,
@@ -56,6 +57,7 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
   helperText,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  useScrollLock(isOpen);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Parse initial date or default to today

@@ -1,3 +1,4 @@
+import { useScrollLock } from '../../hooks/useScrollLock';
 import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { Account, CreditCard, AccountType, CardNetwork, CardTheme } from '../../types';
@@ -42,6 +43,8 @@ export const AddAccountOrCardModal: React.FC<AddAccountOrCardModalProps> = ({
   onCreatedAccount,
   onCreatedCard,
 }) => {
+  useScrollLock(isOpen);
+
   const { addAccount, addCreditCard, accounts, creditCards } = useMoney();
 
   const [activeTab, setActiveTab] = useState<'BANK' | 'CARD' | 'WALLET'>(defaultTab);

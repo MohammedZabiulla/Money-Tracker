@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import { useMoney } from '../../context/MoneyContext';
 import { Account, CreditCard, AccountType, CardNetwork, CardTheme, BankCardCatalogItem } from '../../types';
 import { formatINR, formatCompactINR } from '../../lib/currency';
@@ -68,7 +69,7 @@ interface AccountsViewProps {
   onEditTransaction?: (tx: Transaction) => void;
 }
 
-export const AccountsView: React.FC<AccountsViewProps> = ({
+export const AccountsView: React.FC<AccountsViewProps> = React.memo(({
   onSelectAccountTransactions,
   onSelectTransaction,
   onOpenAdd,
@@ -226,6 +227,9 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
   const [editCardDueDay, setEditCardDueDay] = useState('5');
   const [editCardNotes, setEditCardNotes] = useState('');
   const [editCardIsActive, setEditCardIsActive] = useState(true);
+  const isAnyModalOpen = showAddAccountModal || showEditAccountModal || showAddCardModal || showEditCardModal || showBankCatalogModal || showCatalogModal || showWalletCatalogModal || showConvertModal || showConvertCardModal || showReconciliationModal || showCardPayModal || showArrangeAccountsModal || showArrangeCardsModal;
+  useScrollLock(isAnyModalOpen);
+
 
   // Auto update bank details when bank changes in Add Account
   const handleAddBankChange = (instName: string) => {
@@ -2587,4 +2591,4 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       />
     </div>
   );
-};
+});
