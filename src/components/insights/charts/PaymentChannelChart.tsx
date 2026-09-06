@@ -40,7 +40,7 @@ export const PaymentChannelChart: React.FC<PaymentChannelChartProps> = ({
   const channelTotals: { [key: string]: { name: string; amount: number; count: number; type: string; color: string } } = {};
 
   const monthlyExpenses = transactions.filter(
-    t => !t.isDeleted && t.type === 'EXPENSE' && t.date.startsWith(activeMonth)
+    t => !t.isDeleted && t.type === 'EXPENSE' && (activeMonth === 'ALL' || t.date.startsWith(activeMonth))
   );
 
   let totalExpenseAmount = 0;

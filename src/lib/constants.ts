@@ -3160,6 +3160,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   hiddenDashboardCards: [],
   dashboardCardOrder: ['overview', 'quick_actions', 'categories', 'budgets', 'upcoming', 'recent'],
   lowBalanceThreshold: 5000,
+  middleNavAction: 'add_transaction',
   notificationPreferences: {
     billReminders: true,
     budgetAlerts: true,

@@ -189,7 +189,7 @@ export const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps>
 
         // Time filter
         if (timeFilter === 'THIS_MONTH') {
-          if (!t.date.startsWith(currentMonth)) return false;
+          if (currentMonth && currentMonth !== 'ALL' && !t.date.startsWith(currentMonth)) return false;
         } else if (timeFilter === 'LAST_30_DAYS') {
           const thirtyDaysAgo = new Date();
           thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -306,7 +306,9 @@ export const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps>
               <div>
                 <span className="text-[10px] text-white/80 uppercase font-semibold block">
                   {timeFilter === 'THIS_MONTH'
-                    ? `Spent in ${currentMonth}`
+                    ? currentMonth === 'ALL'
+                      ? 'Total Period Spent'
+                      : `Spent in ${currentMonth}`
                     : timeFilter === 'LAST_30_DAYS'
                     ? 'Last 30 Days'
                     : 'Total Spent'}
@@ -359,7 +361,7 @@ export const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps>
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                     }`}
                   >
-                    {currentMonth}
+                    {currentMonth === 'ALL' ? 'Selected Period' : currentMonth}
                   </button>
                   <button
                     onClick={() => setTimeFilter('LAST_30_DAYS')}

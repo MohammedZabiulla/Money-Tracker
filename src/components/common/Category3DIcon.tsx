@@ -352,7 +352,7 @@ function matchCategoryPalette(categoryName?: string, name?: string, customColor?
     resolvedIcon = 'Receipt';
   }
 
-  // Color sanitization to prevent white-on-white
+  // Color sanitization to prevent white-on-white and build multi-stop 3D gradient
   let baseColor = customColor || '#3b82f6';
   if (baseColor.toLowerCase() === '#ffffff' || baseColor.toLowerCase() === '#fff' || baseColor.toLowerCase() === '#f8fafc') {
     baseColor = '#0284c7';
@@ -361,6 +361,7 @@ function matchCategoryPalette(categoryName?: string, name?: string, customColor?
   return {
     palette: {
       from: baseColor,
+      via: baseColor,
       to: baseColor,
       shadow: `${baseColor}60`,
       accent: '#ffffff',
@@ -425,11 +426,27 @@ export const Category3DIcon: React.FC<Category3DIconProps> = ({
 
   if (shape === 'circle') {
     roundedClass = 'rounded-full';
+  } else if (shape === 'rounded') {
+    roundedClass = 'rounded-xl';
   }
 
   const { palette, iconName } = matchCategoryPalette(categoryName, name, color);
 
-  // Dynamic Icon Component
+  // Check if name is an image (data URL or web URL)
+  const isImage = typeof name === 'string' && (
+    name.startsWith('data:image') ||
+    name.startsWith('http://') ||
+    name.startsWith('https://') ||
+    name.startsWith('blob:')
+  );
+
+  // Check if name is an emoji
+  const isEmoji = typeof name === 'string' && !isImage && (
+    /\p{Extended_Pictographic}/u.test(name) ||
+    (name.length <= 4 && !/^[A-Za-z0-9_]+$/.test(name))
+  );
+
+  // Dynamic Icon Component for Lucide
   const IconComponent =
     (LucideIcons as any)[name && name !== 'HelpCircle' ? name : iconName] ||
     (LucideIcons as any)[iconName] ||
@@ -466,14 +483,35 @@ export const Category3DIcon: React.FC<Category3DIconProps> = ({
         }}
       />
 
-      {/* Embossed Inner Icon with 3D Depth Shadow */}
+      {/* Embossed Inner Content (Image, Emoji, or Lucide Icon) with 3D Depth Shadow */}
       <div
         className="relative z-10 flex items-center justify-center text-white"
         style={{
           filter: 'drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45))',
         }}
       >
-        <IconComponent size={iconSizePx} strokeWidth={2.4} className="text-white" />
+        {isImage ? (
+          <img
+            src={name}
+            alt={categoryName || 'Icon'}
+            className="w-[72%] h-[72%] object-cover rounded-md select-none pointer-events-none"
+            style={{
+              maxHeight: `${Math.round(containerSizePx * 0.7)}px`,
+              maxWidth: `${Math.round(containerSizePx * 0.7)}px`,
+            }}
+          />
+        ) : isEmoji ? (
+          <span
+            className="select-none leading-none flex items-center justify-center pointer-events-none"
+            style={{
+              fontSize: `${Math.round(iconSizePx * 1.3)}px`,
+            }}
+          >
+            {name}
+          </span>
+        ) : (
+          <IconComponent size={iconSizePx} strokeWidth={2.4} className="text-white" />
+        )}
       </div>
     </div>
   );

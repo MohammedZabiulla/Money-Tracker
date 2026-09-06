@@ -178,7 +178,7 @@ export const SpendsPieChart: React.FC<SpendsPieChartProps> = ({
           const isSelected = activeIndex === index;
           return (
             <button
-              key={item.categoryId || index}
+              key={`pie_legend_${item.categoryId || 'cat'}_${index}`}
               onClick={() => setActiveIndex(isSelected ? null : index)}
               onMouseEnter={() => setActiveIndex(index)}
               onMouseLeave={() => setActiveIndex(null)}

@@ -639,13 +639,13 @@ export const TemplateManagementModal: React.FC<TemplateManagementModalProps> = (
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {filteredTemplates.map((tmpl) => {
+                  {filteredTemplates.map((tmpl, idx) => {
                     const isExpense = tmpl.type === 'EXPENSE';
                     const isIncome = tmpl.type === 'INCOME';
 
                     return (
                       <div
-                        key={tmpl.id}
+                        key={`tmpl_${tmpl.id}_${idx}`}
                         className="bg-white dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/90 hover:border-slate-300 dark:hover:border-slate-700 rounded-2xl p-4 flex flex-col justify-between space-y-3 transition-all hover:shadow-md group"
                       >
                         {/* Top Row: Icon, Title, Favorite & Actions */}

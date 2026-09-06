@@ -54,6 +54,18 @@ export const IconHelper: React.FC<IconHelperProps> = ({
     return <img src={name} alt="" className={`${className} object-cover rounded-full`} />;
   }
 
+  const isEmoji = /\p{Extended_Pictographic}/u.test(name) || (name.length <= 4 && !/^[A-Za-z0-9_]+$/.test(name));
+  if (isEmoji) {
+    return (
+      <span
+        className={`inline-flex items-center justify-center leading-none ${className}`}
+        style={{ fontSize: `${size}px` }}
+      >
+        {name}
+      </span>
+    );
+  }
+
   // Check Lucide Icons
   const IconComponent = (LucideIcons as any)[name] || LucideIcons.HelpCircle;
 

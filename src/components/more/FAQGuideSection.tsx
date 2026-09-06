@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import {
   BookOpen,
   HelpCircle,
@@ -38,6 +39,7 @@ import {
   Eye,
   RotateCcw,
   Check,
+  X,
 } from 'lucide-react';
 
 interface GuideStep {
@@ -59,7 +61,12 @@ interface GuideItem {
   caution?: string;
 }
 
-export const FAQGuideSection: React.FC = () => {
+interface FAQGuideSectionProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export const FAQGuideSection: React.FC<FAQGuideSectionProps> = ({ isOpen = true, onClose }) => {
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -74,6 +81,10 @@ export const FAQGuideSection: React.FC = () => {
   const [userEmail, setUserEmail] = useState('muhammadzabiulla786@gmail.com');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [imageError, setImageError] = useState(false);
+
+  useScrollLock(isOpen);
+
+  if (!isOpen) return null;
 
   const guideCategories = [
     { id: 'all', label: 'All Guides', icon: BookOpen },
@@ -690,7 +701,7 @@ export const FAQGuideSection: React.FC = () => {
   };
 
   return (
-    <div className="mt-8 pt-8 border-t border-slate-200 dark:border-slate-800 space-y-8" id="app-complete-guide">
+    <div className="space-y-8" id="app-complete-guide">
       {/* 1. Header Banner */}
       <div className="p-6 bg-gradient-to-br from-emerald-600 via-teal-700 to-slate-900 rounded-3xl text-white shadow-lg space-y-4 relative overflow-hidden">
         <div className="absolute right-0 -bottom-10 w-48 h-48 bg-emerald-400/15 rounded-full blur-3xl pointer-events-none"></div>
@@ -892,9 +903,102 @@ export const FAQGuideSection: React.FC = () => {
                               <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-slate-100">
                                 {step.title}
                               </h4>
-                              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-2">
                                 {step.desc}
                               </p>
+                              {/* Rich Visual UI Mockup Preview Card */}
+                              <div className="mt-2 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-2">
+                                <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                  <span>Live UI Preview • Step {stepIdx + 1}</span>
+                                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" /> Interactive Mockup
+                                  </span>
+                                </div>
+                                {guide.id === 'fast-start' && stepIdx === 0 && (
+                                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 flex items-center justify-between text-xs">
+                                    <div className="flex items-center space-x-2">
+                                      <span className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold">🍔</span>
+                                      <div>
+                                        <span className="font-black text-slate-900 dark:text-white block">Expense: Food & Dining</span>
+                                        <span className="text-[10px] text-slate-500">Paid via HDFC Bank</span>
+                                      </div>
+                                    </div>
+                                    <span className="font-mono font-black text-rose-600 dark:text-rose-400">-₹350.00</span>
+                                  </div>
+                                )}
+                                {guide.id === 'fast-start' && stepIdx === 1 && (
+                                  <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 flex items-center justify-between text-xs">
+                                    <div className="flex items-center space-x-2">
+                                      <span className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold">💼</span>
+                                      <div>
+                                        <span className="font-black text-slate-900 dark:text-white block">Income: Salary Credited</span>
+                                        <span className="text-[10px] text-slate-500">Received in SBI Account</span>
+                                      </div>
+                                    </div>
+                                    <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">+₹45,000.00</span>
+                                  </div>
+                                )}
+                                {guide.id === 'fast-start' && stepIdx === 2 && (
+                                  <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900/50 flex items-center justify-between text-xs">
+                                    <div className="flex items-center space-x-2">
+                                      <span className="w-7 h-7 rounded-lg bg-purple-600 text-white flex items-center justify-center font-bold">🔄</span>
+                                      <div>
+                                        <span className="font-black text-slate-900 dark:text-white block">Transfer: ATM Cash Withdrawal</span>
+                                        <span className="text-[10px] text-slate-500">HDFC Bank ➔ Cash in Pocket</span>
+                                      </div>
+                                    </div>
+                                    <span className="font-mono font-black text-purple-600 dark:text-purple-400">₹5,000.00</span>
+                                  </div>
+                                )}
+                                {guide.id === 'fast-start' && stepIdx >= 3 && (
+                                  <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-[11px] font-mono text-slate-600 dark:text-slate-300 text-center font-bold">
+                                    📊 Net Worth = Assets (₹2,50,000) − Liabilities (₹35,000) = ₹2,15,000
+                                  </div>
+                                )}
+
+                                {guide.id === 'bank-accounts' && (
+                                  <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 flex items-center justify-between text-xs">
+                                    <div className="flex items-center space-x-2">
+                                      <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold">🏦</div>
+                                      <div>
+                                        <span className="font-black text-slate-900 dark:text-white block">HDFC Salary Account</span>
+                                        <span className="text-[10px] text-slate-500">Opening Balance Set</span>
+                                      </div>
+                                    </div>
+                                    <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">₹45,200.00</span>
+                                  </div>
+                                )}
+
+                                {guide.id === 'credit-cards' && (
+                                  <div className="p-2.5 rounded-xl bg-slate-900 text-white flex items-center justify-between text-xs">
+                                    <div className="flex items-center space-x-2">
+                                      <div className="w-6 h-6 rounded bg-gradient-to-tr from-amber-500 to-yellow-300 text-slate-950 font-bold text-[10px] flex items-center justify-center">VISA</div>
+                                      <div>
+                                        <span className="font-black text-white block">HDFC Millennia (•••• 4092)</span>
+                                        <span className="text-[10px] text-slate-300">Limit: ₹1,50,000</span>
+                                      </div>
+                                    </div>
+                                    <span className="font-mono text-xs font-bold text-amber-400">Due: 5th</span>
+                                  </div>
+                                )}
+
+                                {guide.id === 'adding-transactions' && (
+                                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 flex items-center justify-between text-xs">
+                                    <div className="flex items-center space-x-2">
+                                      <span className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold">✓</span>
+                                      <span className="font-black text-slate-900 dark:text-white">Transaction Successfully Recorded</span>
+                                    </div>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold">Undo Available (5s)</span>
+                                  </div>
+                                )}
+
+                                {guide.id !== 'fast-start' && guide.id !== 'bank-accounts' && guide.id !== 'credit-cards' && guide.id !== 'adding-transactions' && (
+                                  <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                                    <span className="font-medium">Step {stepIdx + 1} Action Executed Successfully</span>
+                                    <span className="px-2 py-0.5 rounded bg-emerald-600 text-white font-bold text-[10px]">Verified UI</span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -972,23 +1076,23 @@ export const FAQGuideSection: React.FC = () => {
                   {!imageError ? (
                     <img
                       src="/Mohammed_Zabiulla_PP_Size_March_2026.jpg"
-                      alt="Muhammed Zabiulla"
+                      alt="Mohammed Saqlain"
                       referrerPolicy="no-referrer"
                       onError={() => {
                         console.log("Developer portrait not found in public/ directory, falling back to styled initials.");
                         setImageError(true);
                       }}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover object-[center_15%]"
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white font-black text-xs tracking-wider">
-                      MZ
+                      MS
                     </div>
                   )}
                 </div>
                 <div>
                   <h4 className="text-xs font-black uppercase tracking-widest text-emerald-400">Lead Architect</h4>
-                  <p className="text-sm font-extrabold text-white mt-0.5">Muhammed Zabiulla</p>
+                  <p className="text-sm font-extrabold text-white mt-0.5">Mohammed Saqlain</p>
                   <p className="text-[10px] text-slate-400">Full-Stack Sovereign Architect</p>
                 </div>
               </div>

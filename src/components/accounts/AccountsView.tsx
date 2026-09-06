@@ -1502,7 +1502,7 @@ export const AccountsView: React.FC<AccountsViewProps> = React.memo(({
                 <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
                   {availableAddBankCards.map((cItem, idx) => (
                     <button
-                      key={cItem.id || `${cItem.issuer}-${cItem.name}-${idx}`}
+                      key={`add_card_${cItem.id || 'c'}_${idx}`}
                       type="button"
                       onClick={() => applyCardCatalogItem(cItem)}
                       className={`px-3 py-2 rounded-xl text-left border flex-shrink-0 transition-all ${
@@ -1706,7 +1706,7 @@ export const AccountsView: React.FC<AccountsViewProps> = React.memo(({
                 <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
                   {availableEditBankCards.map((cItem, idx) => (
                     <button
-                      key={cItem.id || `${cItem.issuer}-${cItem.name}-${idx}`}
+                      key={`edit_card_${cItem.id || 'c'}_${idx}`}
                       type="button"
                       onClick={() => applyCardCatalogItemToEdit(cItem)}
                       className={`px-3 py-2 rounded-xl text-left border flex-shrink-0 transition-all ${
@@ -1992,7 +1992,7 @@ export const AccountsView: React.FC<AccountsViewProps> = React.memo(({
 
                   return (
                     <div
-                      key={cItem.id || `${cItem.issuer}-${cItem.name}-${idx}`}
+                      key={`cat_card_${cItem.id || 'c'}_${idx}`}
                       className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-700 transition-all flex flex-col justify-between space-y-2.5"
                     >
                       {/* Mini Preview Header */}

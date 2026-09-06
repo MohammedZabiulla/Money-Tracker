@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -27,6 +28,7 @@ export interface CustomDatePickerProps {
   id?: string;
   align?: 'left' | 'right' | 'center';
   helperText?: string;
+  iconOnly?: boolean;
 }
 
 const MONTH_NAMES = [
@@ -55,10 +57,60 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
   id,
   align = 'left',
   helperText,
+  iconOnly = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   useScrollLock(isOpen);
   const containerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 640 : false);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 330 });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const updateCoords = () => {
+    if (containerRef.current && typeof window !== 'undefined') {
+      const rect = containerRef.current.getBoundingClientRect();
+      const popoverWidth = Math.min(330, window.innerWidth - 24);
+      
+      let left = rect.left;
+      if (align === 'right') {
+        left = rect.right - popoverWidth;
+      } else if (align === 'center') {
+        left = rect.left + rect.width / 2 - popoverWidth / 2;
+      }
+
+      // Constrain right boundary
+      if (left + popoverWidth > window.innerWidth - 12) {
+        left = window.innerWidth - popoverWidth - 12;
+      }
+      // Constrain left boundary
+      if (left < 12) {
+        left = 12;
+      }
+
+      // Check vertical boundary
+      let top = rect.bottom + 6;
+      if (top + 390 > window.innerHeight && rect.top > 390) {
+        top = Math.max(12, rect.top - 6 - 380);
+      }
+
+      setCoords({ top, left, width: popoverWidth });
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      updateCoords();
+    }
+  }, [isOpen, align]);
 
   // Parse initial date or default to today
   const todayStr = useMemo(() => {
@@ -108,7 +160,11 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (e: MouseEvent | TouchEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        popoverRef.current && !popoverRef.current.contains(target)
+      ) {
         setIsOpen(false);
         setSelectorMode('calendar');
       }
@@ -282,7 +338,7 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
 
   return (
     <div className={`relative ${className}`} ref={containerRef} id={id}>
-      {label && (
+      {label && !iconOnly && (
         <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5 flex items-center justify-between">
           <span>{label}</span>
           {value && clearable && (
@@ -301,18 +357,36 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
       )}
 
       {/* Trigger Button */}
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between transition-all border text-left group select-none ${
-          sizeClasses[size]
-        } ${
-          isOpen
-            ? 'bg-indigo-50/60 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
-            : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 hover:border-indigo-400 dark:hover:border-indigo-600 shadow-xs'
-        } ${disabled ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-900' : 'cursor-pointer'}`}
-      >
+      {iconOnly ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setIsOpen(!isOpen)}
+          className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all border cursor-pointer active:scale-95 ${
+            isOpen
+              ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+              : value
+              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+              : 'bg-slate-100 dark:bg-slate-750 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+          }`}
+          title={formattedDisplay || placeholder}
+          aria-label={placeholder}
+        >
+          <CalendarIcon size={15} />
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setIsOpen(!isOpen)}
+          className={`w-full flex items-center justify-between transition-all border text-left group select-none ${
+            sizeClasses[size]
+          } ${
+            isOpen
+              ? 'bg-indigo-50/60 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+              : 'bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 hover:border-indigo-400 dark:hover:border-indigo-600 shadow-xs'
+          } ${disabled ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-900' : 'cursor-pointer'}`}
+        >
         <div className="flex items-center space-x-2 min-w-0 truncate">
           <div
             className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
@@ -355,24 +429,47 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
           />
         </div>
       </button>
+      )}
 
-      {helperText && (
+      {helperText && !iconOnly && (
         <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{helperText}</p>
       )}
 
-      {/* Popover / Calendar Modal */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: 6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.97 }}
-            transition={{ duration: 0.15 }}
-            className={`absolute z-50 mt-1.5 w-[310px] sm:w-[330px] rounded-3xl bg-white dark:bg-slate-850 border border-slate-200/90 dark:border-slate-700 shadow-2xl overflow-hidden p-3.5 ${
-              align === 'right' ? 'right-0' : align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'
-            }`}
-            style={{ maxWidth: 'calc(100vw - 32px)' }}
-          >
+      {/* Popover / Calendar Modal rendered via Portal to guarantee it never extends outside display area */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {isOpen && (
+            <div
+              className={`fixed inset-0 z-[100] ${
+                isMobile
+                  ? 'flex items-center justify-center p-3.5 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150'
+                  : 'pointer-events-none'
+              }`}
+            >
+              <div
+                className={`absolute inset-0 ${isMobile ? '' : 'pointer-events-auto'}`}
+                onClick={() => setIsOpen(false)}
+              />
+              <motion.div
+                ref={popoverRef}
+                initial={isMobile ? { opacity: 0, scale: 0.95, y: 8 } : { opacity: 0, y: 4, scale: 0.98 }}
+                animate={isMobile ? { opacity: 1, scale: 1, y: 0 } : { opacity: 1, y: 0, scale: 1 }}
+                exit={isMobile ? { opacity: 0, scale: 0.95, y: 8 } : { opacity: 0, y: 4, scale: 0.98 }}
+                transition={{ duration: 0.15 }}
+                style={
+                  isMobile
+                    ? undefined
+                    : {
+                        position: 'fixed',
+                        top: coords.top,
+                        left: coords.left,
+                        width: coords.width,
+                      }
+                }
+                className={`relative z-10 pointer-events-auto rounded-3xl bg-white dark:bg-slate-850 border border-slate-200/90 dark:border-slate-700 shadow-2xl overflow-hidden p-3.5 ${
+                  isMobile ? 'w-full max-w-[340px] max-h-[90vh] overflow-y-auto' : ''
+                }`}
+              >
             {/* Cute Header with Month/Year Toggles */}
             <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center space-x-1.5">
@@ -594,8 +691,11 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
               </div>
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+        </div>
+      )}
+    </AnimatePresence>,
+    document.body
+  )}
+</div>
+);
 };

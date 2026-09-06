@@ -20,6 +20,7 @@ import { CashewImportModal } from './CashewImportModal';
 import { AppImportExportModal } from './AppImportExportModal';
 import { TrashModal } from '../common/TrashModal';
 import { FAQGuideSection } from './FAQGuideSection';
+import { NotesManagementModal } from './NotesManagementModal';
 import {
   FileSpreadsheet,
   Download,
@@ -39,6 +40,9 @@ import {
   Trash2,
   FileX2,
   BookOpen,
+  FileText,
+  Fingerprint,
+  KeyRound,
 } from 'lucide-react';
 
 export const MoreView: React.FC = React.memo(() => {
@@ -76,7 +80,13 @@ export const MoreView: React.FC = React.memo(() => {
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [showCashewImportModal, setShowCashewImportModal] = useState(false);
   const [showAppImportExportModal, setShowAppImportExportModal] = useState(false);
-  const isAnyModalOpen = showGoalModal || showCategoryModal || showSubscriptionModal || showRecurringModal || showInvestmentModal || showLentBorrowedModal || showEmblemStudioModal || showPaymentAppModal || showBudgetModal || showLoanModal || showTemplateModal || showActivityLogModal || showTrashModal || showCashewImportModal || showAppImportExportModal;
+  const [showGuideModal, setShowGuideModal] = useState(false);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [confirmPinInput, setConfirmPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+  const isAnyModalOpen = showGoalModal || showCategoryModal || showSubscriptionModal || showRecurringModal || showInvestmentModal || showLentBorrowedModal || showEmblemStudioModal || showPaymentAppModal || showBudgetModal || showLoanModal || showTemplateModal || showActivityLogModal || showTrashModal || showCashewImportModal || showAppImportExportModal || showGuideModal || showNotesModal || showPinModal;
   useScrollLock(isAnyModalOpen);
 
   const [importExportInitialTab, setImportExportInitialTab] = useState<'EXPORT' | 'IMPORT'>('EXPORT');
@@ -132,40 +142,8 @@ export const MoreView: React.FC = React.memo(() => {
         </div>
       )}
 
-
-
-      {/* Quick Access to Comprehensive User Guide */}
-      <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-slate-500/10 dark:from-emerald-950/40 dark:via-teal-950/40 dark:to-slate-900/40 rounded-3xl border border-emerald-500/30 dark:border-emerald-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-        <div className="flex items-center space-x-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-            <BookOpen size={20} />
-          </div>
-          <div>
-            <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
-              Complete Step-by-Step App Guide & Tutorial
-            </h4>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              New to the app? Read simple step-by-step instructions for every single feature, card, and budget.
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            const el = document.getElementById('app-complete-guide');
-            if (el) {
-              el.scrollIntoView({ behavior: 'smooth' });
-            }
-          }}
-          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer transition-all shrink-0"
-        >
-          <span>Read User Guide</span>
-          <ArrowRight size={14} />
-        </button>
-      </div>
-
       {/* --------------------------------------------------------------------- */}
-      {/* 2. FINANCIAL SUITE & PLANNING TOOLS */}
+      {/* 1. FINANCIAL SUITE & PLANNING TOOLS */}
       {/* --------------------------------------------------------------------- */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
@@ -424,7 +402,36 @@ export const MoreView: React.FC = React.memo(() => {
       </div>
 
       {/* --------------------------------------------------------------------- */}
-      {/* 3. DATA MIGRATION & UNIFIED IMPORT / EXPORT HUB */}
+      {/* 2. MINDFUL NOTES & QUICK LIST */}
+      {/* --------------------------------------------------------------------- */}
+      <div className="space-y-3">
+        <div className="p-5 bg-gradient-to-br from-teal-500/10 via-cyan-500/10 to-slate-500/10 dark:from-teal-950/40 dark:via-cyan-950/40 dark:to-slate-900/40 rounded-3xl border border-teal-500/30 dark:border-teal-500/20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-start space-x-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <FileText size={20} />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                Mindful Notes & Quick List
+              </h4>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Take down numbers, grocery lists, or mindful thoughts and save them for anytime use.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowNotesModal(true)}
+            className="py-2.5 px-5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-black rounded-xl flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer transition-all shrink-0"
+          >
+            <span>Open Notes Manager</span>
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* --------------------------------------------------------------------- */}
+      {/* 3. DATA MIGRATION, IMPORT & EXPORT HUB */}
       {/* --------------------------------------------------------------------- */}
       <div className="space-y-3">
         <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider px-1">
@@ -493,7 +500,123 @@ export const MoreView: React.FC = React.memo(() => {
         </div>
       </div>
 
-      {/* 4. DANGER ZONE */}
+      {/* --------------------------------------------------------------------- */}
+      {/* 4. APP PIN & BIOMETRIC / INTERACTIVE APP GUIDE & HANDBOOK */}
+      {/* --------------------------------------------------------------------- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Interactive App Guide Handbook Card */}
+        <div className="p-5 bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-slate-500/10 dark:from-emerald-950/40 dark:via-teal-950/40 dark:to-slate-900/40 rounded-3xl border border-emerald-500/30 dark:border-emerald-500/20 flex flex-col justify-between space-y-4 shadow-xs">
+          <div className="flex items-start space-x-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <BookOpen size={20} />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                Interactive App Guide & Handbook
+              </h4>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Step-by-step documentation with visual UI actions for every feature and budget.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowGuideModal(true)}
+            className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer transition-all"
+          >
+            <span>Open Guide Handbook</span>
+            <ArrowRight size={14} />
+          </button>
+        </div>
+
+        {/* App Security & Biometric Lock Card */}
+        <div className="p-5 bg-gradient-to-br from-purple-500/10 via-indigo-500/10 to-slate-500/10 dark:from-purple-950/40 dark:via-indigo-950/40 dark:to-slate-900/40 rounded-3xl border border-purple-500/30 dark:border-purple-500/20 flex flex-col justify-between space-y-4 shadow-xs">
+          <div className="flex items-start space-x-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <Shield size={20} />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+                  App PIN & Biometric Lock
+                </h4>
+                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
+                  settings.isPinEnabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                }`}>
+                  {settings.isPinEnabled ? 'Active' : 'Disabled'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Secure your financial records with a 4-digit PIN and fingerprint/Face ID unlock.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (!settings.isPinEnabled) {
+                  if (!settings.pinHash) {
+                    setShowPinModal(true);
+                  } else {
+                    updateSettings({ isPinEnabled: true });
+                  }
+                } else {
+                  updateSettings({ isPinEnabled: false });
+                }
+              }}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
+                settings.isPinEnabled
+                  ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                  : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-600/20'
+              }`}
+            >
+              <Lock size={13} />
+              <span>{settings.isPinEnabled ? 'Disable PIN Lock' : 'Enable PIN Lock'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => updateSettings({ isBiometricEnabled: !settings.isBiometricEnabled })}
+              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
+                settings.isBiometricEnabled
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+              }`}
+              title="Toggle Biometric / Fingerprint Unlock"
+            >
+              <Fingerprint size={14} />
+              <span>{settings.isBiometricEnabled ? 'Biometrics On' : 'Biometrics Off'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowPinModal(true)}
+              className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all flex items-center justify-center space-x-1 cursor-pointer"
+              title="Change 4-Digit PIN"
+            >
+              <KeyRound size={13} />
+              <span>Set PIN</span>
+            </button>
+
+            {settings.isPinEnabled && (
+              <button
+                type="button"
+                onClick={() => context.lockApp()}
+                className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all flex items-center justify-center space-x-1 cursor-pointer"
+                title="Lock App Now"
+              >
+                <span>Lock Now</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* --------------------------------------------------------------------- */}
+      {/* 5. DANGER ZONE */}
+      {/* --------------------------------------------------------------------- */}
       <div className="space-y-3 pt-4">
         <div className="flex items-center justify-between px-1">
           <h3 className="text-sm font-extrabold text-rose-600 dark:text-rose-500 uppercase tracking-wider">
@@ -548,11 +671,132 @@ export const MoreView: React.FC = React.memo(() => {
         </div>
       </div>
 
-      {/* 5. INTERACTIVE DOCUMENTATION & HELP CENTER */}
-      <FAQGuideSection />
+
 
       {/* Modals */}
-      <CategoryManagementModal isOpen={showCategoryModal} onClose={() => setShowCategoryModal(false)} />
+      {showGuideModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-5xl max-h-[92vh] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50/70 dark:bg-slate-900/70">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md">
+                  <BookOpen size={20} />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                    Interactive App Guide & Handbook
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Step-by-step user manual and feature documentation
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGuideModal(false)}
+                className="w-9 h-9 rounded-full bg-slate-200/60 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              <FAQGuideSection isOpen={true} onClose={() => setShowGuideModal(false)} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notes Management Modal */}
+      <NotesManagementModal isOpen={showNotesModal} onClose={() => setShowNotesModal(false)} />
+      {showPinModal && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-3 rounded-2xl bg-purple-100 text-purple-600 dark:bg-purple-950/80 dark:text-purple-400">
+                <Lock size={24} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Set 4-Digit Security PIN
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Enter a secure numeric passcode</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">New 4-Digit PIN</label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  placeholder="e.g. 1234"
+                  value={pinInput}
+                  onChange={e => {
+                    setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4));
+                    setPinError('');
+                  }}
+                  className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-center text-lg font-mono tracking-widest text-slate-900 dark:text-white outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">Confirm PIN</label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  placeholder="e.g. 1234"
+                  value={confirmPinInput}
+                  onChange={e => {
+                    setConfirmPinInput(e.target.value.replace(/\D/g, '').slice(0, 4));
+                    setPinError('');
+                  }}
+                  className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-center text-lg font-mono tracking-widest text-slate-900 dark:text-white outline-none focus:border-purple-500"
+                />
+              </div>
+
+              {pinError && <p className="text-xs text-rose-500 font-bold text-center">{pinError}</p>}
+            </div>
+
+            <div className="flex space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPinModal(false);
+                  setPinInput('');
+                  setConfirmPinInput('');
+                  setPinError('');
+                }}
+                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-2xl text-xs transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (pinInput.length !== 4) {
+                    setPinError('PIN must be exactly 4 digits');
+                    return;
+                  }
+                  if (pinInput !== confirmPinInput) {
+                    setPinError('PINs do not match');
+                    return;
+                  }
+                  updateSettings({ isPinEnabled: true, pinHash: pinInput });
+                  setShowPinModal(false);
+                  setPinInput('');
+                  setConfirmPinInput('');
+                  setPinError('');
+                }}
+                className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-2xl text-xs transition-all shadow-md shadow-purple-600/20"
+              >
+                Save & Enable PIN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <SubscriptionManagementModal isOpen={showSubscriptionModal} onClose={() => setShowSubscriptionModal(false)} />
       <RecurringManagementModal isOpen={showRecurringModal} onClose={() => setShowRecurringModal(false)} />
       <InvestmentManagementModal isOpen={showInvestmentModal} onClose={() => setShowInvestmentModal(false)} />

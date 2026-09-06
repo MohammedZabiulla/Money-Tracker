@@ -361,7 +361,88 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return t;
     });
 
-    if (needsMigration) {
+    const currentYearMonth = new Date().toISOString().substring(0, 7);
+    const hasCurrentMonthSalary = migratedTransactions.some(
+      t => !t.isDeleted && t.id === 'tx_sal_current_month' && t.date.startsWith(currentYearMonth)
+    );
+    const hasDemoSalary = migratedTransactions.some(t => t.id === 'tx_sal_current_month');
+
+    if (hasDemoSalary && !hasCurrentMonthSalary) {
+      needsMigration = true;
+      const currentMonthSalaryDate = `${currentYearMonth}-01`;
+      const currentMonthRentDate = `${currentYearMonth}-02`;
+
+      // Update current month transactions to fall in this month
+      let updatedTxs = migratedTransactions.map(t => {
+        if (t.id === 'tx_sal_current_month') {
+          return {
+            ...t,
+            date: currentMonthSalaryDate,
+            timestamp: new Date(`${currentYearMonth}-01T09:30:00`).getTime(),
+            createdAt: new Date(`${currentYearMonth}-01T09:30:00`).getTime(),
+          };
+        }
+        if (t.id === 'tx_rent') {
+          return {
+            ...t,
+            date: currentMonthRentDate,
+            timestamp: new Date(`${currentYearMonth}-02T11:00:00`).getTime(),
+            createdAt: new Date(`${currentYearMonth}-02T11:00:00`).getTime(),
+          };
+        }
+        return t;
+      });
+
+      // Ensure previous month records exist for historical comparison
+      if (!updatedTxs.some(t => t.id === 'tx_sal_prev_month')) {
+        const prevMonthDate = new Date();
+        prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+        const prevYearMonth = prevMonthDate.toISOString().substring(0, 7);
+        updatedTxs.push({
+          id: 'tx_sal_prev_month',
+          amount: 110000,
+          type: 'INCOME',
+          date: `${prevYearMonth}-01`,
+          time: '09:30',
+          timestamp: new Date(`${prevYearMonth}-01T09:30:00`).getTime(),
+          categoryId: 'salary',
+          categoryName: 'Salary',
+          merchantName: 'Tech Innovations Pvt Ltd',
+          accountId: 'acc_hdfc_salary',
+          accountName: 'HDFC Salary A/c',
+          paymentAppId: 'netbanking',
+          paymentAppName: 'Net Banking',
+          notes: 'Previous month salary',
+          createdAt: new Date(`${prevYearMonth}-01T09:30:00`).getTime(),
+          updatedAt: new Date(`${prevYearMonth}-01T09:30:00`).getTime(),
+        });
+      }
+
+      if (!updatedTxs.some(t => t.id === 'tx_rent_prev_month')) {
+        const prevMonthDate = new Date();
+        prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+        const prevYearMonth = prevMonthDate.toISOString().substring(0, 7);
+        updatedTxs.push({
+          id: 'tx_rent_prev_month',
+          amount: 22000,
+          type: 'EXPENSE',
+          date: `${prevYearMonth}-02`,
+          time: '11:00',
+          timestamp: new Date(`${prevYearMonth}-02T11:00:00`).getTime(),
+          categoryId: 'home_rent',
+          categoryName: 'Home & Rent',
+          merchantName: 'Sunil Kumar (Rent)',
+          accountId: 'acc_hdfc_salary',
+          accountName: 'HDFC Salary A/c',
+          paymentAppId: 'gpay',
+          notes: 'Previous month apartment rent',
+          createdAt: new Date(`${prevYearMonth}-02T11:00:00`).getTime(),
+          updatedAt: new Date(`${prevYearMonth}-02T11:00:00`).getTime(),
+        });
+      }
+
+      setState(s => ({ ...s, transactions: updatedTxs }));
+    } else if (needsMigration) {
       setState(s => ({ ...s, transactions: migratedTransactions }));
     }
   }, []);

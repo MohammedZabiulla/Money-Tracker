@@ -28,9 +28,12 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Layers,
   Loader2,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 const shiftDay = (dateStr: string, offsetDays: number): string => {
   if (!dateStr) return new Date().toISOString().substring(0, 10);
@@ -171,6 +174,14 @@ export const TransactionsView: React.FC<TransactionsViewProps> = React.memo(({
   // View mode: 'feed' (Day-by-Day list) | 'calendar' (Interactive Day Matrix)
   const [viewMode, setViewMode] = useState<'feed' | 'calendar'>('feed');
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string>('');
+
+  // Progressive loading states to make initial loading and typing/filtering instantaneous
+  const [displayLimit, setDisplayLimit] = useState(60);
+  const [isFullyLoaded, setIsFullyLoaded] = useState(false);
+
+  // Floating Quick Jump Scroll Navigation (Top & Bottom)
+  const [showScrollButtons, setShowScrollButtons] = useState(false);
+  const [scrollPosition, setScrollPosition] = useState<'top' | 'middle' | 'bottom'>('top');
 
   const renderTimerRef = useRef<any>(null);
   const renderRaf1Ref = useRef<number | null>(null);
@@ -326,10 +337,47 @@ export const TransactionsView: React.FC<TransactionsViewProps> = React.memo(({
     };
   }, []);
 
+  const handleScrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    document.documentElement.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
-  // Progressive loading states to make initial loading and typing/filtering instantaneous
-  const [displayLimit, setDisplayLimit] = useState(60);
-  const [isFullyLoaded, setIsFullyLoaded] = useState(false);
+  const handleScrollToBottom = useCallback(() => {
+    const targetScroll = Math.max(
+      document.body.scrollHeight,
+      document.documentElement.scrollHeight,
+      window.innerHeight
+    );
+    window.scrollTo({ top: targetScroll, behavior: 'smooth' });
+    document.documentElement.scrollTo({ top: targetScroll, behavior: 'smooth' });
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      const windowHeight = window.innerHeight;
+      const scrollHeight = document.documentElement.scrollHeight;
+
+      const isScrollable = scrollHeight > windowHeight + 100;
+      setShowScrollButtons(isScrollable);
+
+      if (scrollY < 120) {
+        setScrollPosition('top');
+      } else if (scrollY + windowHeight >= scrollHeight - 120) {
+        setScrollPosition('bottom');
+      } else {
+        setScrollPosition('middle');
+      }
+    };
+
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [isFullyLoaded, displayLimit]);
 
   // Auto-focus search input with a slight delay for reliable keyboard rendering on mobile device taps
   useEffect(() => {
@@ -1288,15 +1336,15 @@ export const TransactionsView: React.FC<TransactionsViewProps> = React.memo(({
               </button>
             )}
 
-            <div className="w-8">
-              <CustomDatePicker
-                value={selectedDay}
-                onChange={d => {
-                  if (d) setSelectedDay(d);
-                }}
-                size="sm"
-              />
-            </div>
+            <CustomDatePicker
+              value={selectedDay}
+              onChange={d => {
+                if (d) setSelectedDay(d);
+              }}
+              iconOnly
+              align="center"
+              placeholder="Jump to specific date"
+            />
           </div>
 
           {/* Next Day */}
@@ -1333,7 +1381,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = React.memo(({
 
       {/* VIEW MODE 1: Interactive Calendar Matrix */}
       {viewMode === 'calendar' && (
-        <div className="bg-white dark:bg-slate-800 rounded-3xl p-4 sm:p-5 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-3 animate-in fade-in-50">
+        <div className="bg-white dark:bg-slate-800 rounded-3xl p-3 sm:p-5 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-3 animate-in fade-in-50 overflow-hidden w-full">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
             <div className="flex items-center space-x-2">
               <button
@@ -1397,7 +1445,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = React.memo(({
           </div>
 
           {/* Weekday Headers */}
-          <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-slate-400">
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] sm:text-[11px] font-bold text-slate-400">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
               <div key={d} className="py-1">
                 {d}
@@ -1406,10 +1454,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = React.memo(({
           </div>
 
           {/* Calendar Grid */}
-          <div className="grid grid-cols-7 gap-1.5">
+          <div className="grid grid-cols-7 gap-1 sm:gap-1.5 w-full">
             {calendarDays.map((cell, idx) => {
               if (cell.day === 0) {
-                return <div key={`empty-${idx}`} className="h-14 rounded-2xl bg-slate-50/50 dark:bg-slate-850/30" />;
+                return <div key={`empty-${idx}`} className="h-12 sm:h-14 rounded-xl sm:rounded-2xl bg-slate-50/50 dark:bg-slate-850/30" />;
               }
 
               const isSelected = selectedCalendarDate === cell.dateStr;
@@ -1418,10 +1466,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = React.memo(({
 
               return (
                 <button
-                  key={cell.dateStr}
+                  key={`cal_cell_${cell.dateStr || 'day'}_${idx}`}
                   type="button"
                   onClick={() => setSelectedCalendarDate(isSelected ? '' : cell.dateStr)}
-                  className={`h-14 p-1 rounded-2xl flex flex-col items-center justify-between border transition-all text-center relative cursor-pointer active:scale-95 ${
+                  className={`min-h-[48px] sm:h-14 p-0.5 sm:p-1 rounded-xl sm:rounded-2xl flex flex-col items-center justify-between border transition-all text-center relative cursor-pointer active:scale-95 ${
                     isSelected
                       ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 ring-2 ring-emerald-500/30 font-bold'
                       : isToday
@@ -1656,7 +1704,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = React.memo(({
 
           return (
             <div
-              key={dateStr}
+              key={`day_group_${dateStr || 'undated'}_${dIdx}`}
               className="bg-white dark:bg-slate-800 rounded-3xl p-4 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-2"
             >
               {/* Day Header with Date & Net Day Totals */}
@@ -1693,7 +1741,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = React.memo(({
                   
                   return (
                     <TransactionRow
-                      key={t.id}
+                      key={`tx_row_${t.id || 'tx'}_${dIdx}_${idx}`}
                       t={t}
                       isSelectionMode={isSelectionMode}
                       isSelected={selectedTxIds.has(t.id)}
@@ -2072,6 +2120,111 @@ export const TransactionsView: React.FC<TransactionsViewProps> = React.memo(({
             : 'Move to Trash'
         }
       />
+
+      {/* Floating Quick Jump Scroll Navigation Controls (Top & Bottom) */}
+      <AnimatePresence>
+        {filteredTransactions.length >= 8 && showScrollButtons && scrollPosition === 'middle' && (
+          <>
+            {/* Jump to Top Button (Positioned at Top) - 3D Tactile Orb */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.85, y: -10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.85, y: -10 }}
+              transition={{ duration: 0.18 }}
+              className="fixed top-20 sm:top-24 left-4 sm:left-6 z-40 select-none"
+            >
+              <motion.button
+                whileHover={{ scale: 1.12, translateY: -2 }}
+                whileTap={{ scale: 0.9, translateY: 1 }}
+                type="button"
+                onClick={handleScrollToTop}
+                className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center group cursor-pointer select-none border border-black/10 dark:border-white/15"
+                style={{
+                  background: 'linear-gradient(135deg, #ffffff 0%, #f1f5f9 55%, #cbd5e1 100%)',
+                  boxShadow:
+                    '0 6px 16px -2px rgba(15, 23, 42, 0.22), 0 2px 5px -1px rgba(15, 23, 42, 0.12), inset 0 2px 2px 0 rgba(255, 255, 255, 0.9), inset 0 -2px 3px 0 rgba(0, 0, 0, 0.25)',
+                }}
+                title="Jump to Top"
+                aria-label="Scroll to top of transactions"
+              >
+                {/* 3D Specular Arc */}
+                <div
+                  className="absolute inset-0 rounded-full pointer-events-none overflow-hidden"
+                  style={{
+                    background:
+                      'linear-gradient(135deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.15) 45%, transparent 70%)',
+                  }}
+                />
+                {/* Subtle Inner Highlight */}
+                <div
+                  className="absolute top-1 left-2 w-3 h-2 rounded-full opacity-70 pointer-events-none blur-[0.5px]"
+                  style={{
+                    background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.95) 0%, transparent 70%)',
+                  }}
+                />
+                {/* Embossed Up Arrow */}
+                <div
+                  className="relative z-10 flex items-center justify-center text-slate-700 dark:text-slate-800 group-hover:text-emerald-600 transition-colors"
+                  style={{
+                    filter: 'drop-shadow(0 1.5px 2px rgba(0, 0, 0, 0.25))',
+                  }}
+                >
+                  <ChevronUp size={22} strokeWidth={2.8} className="group-hover:-translate-y-0.5 transition-transform" />
+                </div>
+              </motion.button>
+            </motion.div>
+
+            {/* Jump to Bottom Button (Positioned at Bottom) - 3D Tactile Orb */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.85, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.85, y: 10 }}
+              transition={{ duration: 0.18 }}
+              className="fixed bottom-22 sm:bottom-24 left-4 sm:left-6 z-40 select-none"
+            >
+              <motion.button
+                whileHover={{ scale: 1.12, translateY: 2 }}
+                whileTap={{ scale: 0.9, translateY: -1 }}
+                type="button"
+                onClick={handleScrollToBottom}
+                className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center group cursor-pointer select-none border border-black/10 dark:border-white/15"
+                style={{
+                  background: 'linear-gradient(135deg, #ffffff 0%, #f1f5f9 55%, #cbd5e1 100%)',
+                  boxShadow:
+                    '0 6px 16px -2px rgba(15, 23, 42, 0.22), 0 2px 5px -1px rgba(15, 23, 42, 0.12), inset 0 2px 2px 0 rgba(255, 255, 255, 0.9), inset 0 -2px 3px 0 rgba(0, 0, 0, 0.25)',
+                }}
+                title="Jump to Bottom"
+                aria-label="Scroll to bottom of transactions"
+              >
+                {/* 3D Specular Arc */}
+                <div
+                  className="absolute inset-0 rounded-full pointer-events-none overflow-hidden"
+                  style={{
+                    background:
+                      'linear-gradient(135deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.15) 45%, transparent 70%)',
+                  }}
+                />
+                {/* Subtle Inner Highlight */}
+                <div
+                  className="absolute top-1 left-2 w-3 h-2 rounded-full opacity-70 pointer-events-none blur-[0.5px]"
+                  style={{
+                    background: 'radial-gradient(ellipse at center, rgba(255,255,255,0.95) 0%, transparent 70%)',
+                  }}
+                />
+                {/* Embossed Down Arrow */}
+                <div
+                  className="relative z-10 flex items-center justify-center text-slate-700 dark:text-slate-800 group-hover:text-emerald-600 transition-colors"
+                  style={{
+                    filter: 'drop-shadow(0 1.5px 2px rgba(0, 0, 0, 0.25))',
+                  }}
+                >
+                  <ChevronDown size={22} strokeWidth={2.8} className="group-hover:translate-y-0.5 transition-transform" />
+                </div>
+              </motion.button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 });

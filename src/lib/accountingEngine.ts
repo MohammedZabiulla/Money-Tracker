@@ -480,7 +480,7 @@ export function computeFinancialSummary(
 
   // Monthly Income and Expenses for target month
   const monthTransactions = transactions.filter(
-    t => !t.isDeleted && t.date.startsWith(currentMonth)
+    t => !t.isDeleted && (currentMonth === 'ALL' || t.date.startsWith(currentMonth))
   );
 
   let monthlyIncome = 0;
@@ -533,7 +533,7 @@ export function getCategorySpendingBreakdown(
   const filtered = transactions.filter(t => {
     if (t.isDeleted) return false;
     if (t.type !== 'EXPENSE') return false;
-    if (filterMonth && !t.date.startsWith(filterMonth)) return false;
+    if (filterMonth && filterMonth !== 'ALL' && !t.date.startsWith(filterMonth)) return false;
     return true;
   });
 

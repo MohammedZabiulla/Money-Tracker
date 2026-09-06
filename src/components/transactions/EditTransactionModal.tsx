@@ -654,8 +654,8 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             />
           </div>
 
-          {/* Category & Subcategory (for Expense / Income) */}
-          {type !== 'TRANSFER' && type !== 'INVESTMENT_CONTRIBUTION' && (
+          {/* Category & Subcategory (for Expense / Income only) */}
+          {(type === 'EXPENSE' || type === 'INCOME') && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400">

@@ -98,31 +98,40 @@ export const CashflowComparisonChart: React.FC<CashflowComparisonChartProps> = (
 
       {/* Bar Chart Visualization */}
       <div className="h-56 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={chartData}
-            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-          >
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }}
-              axisLine={{ stroke: '#cbd5e1' }}
-              tickLine={false}
-            />
-            <YAxis
-              tickFormatter={val => formatCompactINR(val)}
-              tick={{ fontSize: 10, fill: '#94a3b8' }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
-            <Bar dataKey="amount" radius={[8, 8, 0, 0]}>
-              {chartData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        {summary.monthlyIncome === 0 && summary.monthlyExpenses === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center p-6 text-center bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Cashflow Recorded</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Income and expense transactions in {activeMonth === 'ALL' ? 'all time' : activeMonth} will appear here.
+            </p>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={chartData}
+              margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+            >
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }}
+                axisLine={{ stroke: '#cbd5e1' }}
+                tickLine={false}
+              />
+              <YAxis
+                tickFormatter={val => formatCompactINR(val)}
+                tick={{ fontSize: 10, fill: '#94a3b8' }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
+              <Bar dataKey="amount" radius={[8, 8, 0, 0]}>
+                {chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </div>
   );

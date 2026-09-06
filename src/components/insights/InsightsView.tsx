@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useMoney } from '../../context/MoneyContext';
 import { formatINR, formatCompactINR } from '../../lib/currency';
 import { IconHelper, Category3DIcon } from '../common/IconHelper';
@@ -14,25 +14,148 @@ import {
   ShoppingBag,
   Smartphone,
   Activity,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { SpendsPieChart } from './charts/SpendsPieChart';
 import { CategoryBarChart } from './charts/CategoryBarChart';
 import { DailySpendTrendChart } from './charts/DailySpendTrendChart';
 import { CashflowComparisonChart } from './charts/CashflowComparisonChart';
 import { PaymentChannelChart } from './charts/PaymentChannelChart';
+import { computeFinancialSummary, getCategorySpendingBreakdown } from '../../lib/accountingEngine';
+import { CategoryTransactionsModal } from '../categories/CategoryTransactionsModal';
+import { Transaction, TransactionType } from '../../types';
 
-export const InsightsView: React.FC = () => {
-  const { summary, categorySpending, transactions, accounts, creditCards, paymentApps, activeMonth } = useMoney();
+interface InsightsViewProps {
+  onSelectTransaction?: (tx: Transaction) => void;
+  onOpenAddTransaction?: (type?: TransactionType, categoryId?: string) => void;
+}
+
+export const InsightsView: React.FC<InsightsViewProps> = ({
+  onSelectTransaction,
+  onOpenAddTransaction,
+}) => {
+  const {
+    summary,
+    categorySpending,
+    transactions,
+    accounts,
+    creditCards,
+    paymentApps,
+    categories,
+    investments,
+    loans,
+    debts,
+    activeMonth,
+    setActiveMonth,
+  } = useMoney();
+
   const [viewTab, setViewTab] = useState<'spending' | 'cashflow' | 'networth'>('spending');
   const [chartVisualType, setChartVisualType] = useState<'pie' | 'bar' | 'trend' | 'channel'>('pie');
+  const [selectedCategoryForLedger, setSelectedCategoryForLedger] = useState<{
+    id: string;
+    categoryId: string;
+    name: string;
+    categoryName: string;
+    icon?: string;
+    color?: string;
+    subcategories?: string[];
+    totalAmount?: number;
+  } | null>(null);
 
-  // Compute daily average spend for the active month (assume 30 days)
-  const dailyAverage = summary.monthlyExpenses / 30;
+  // Discover all months present in transaction history
+  const availableMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    transactions.filter(t => !t.isDeleted).forEach(t => {
+      if (t.date && t.date.length >= 7) {
+        monthSet.add(t.date.substring(0, 7));
+      }
+    });
+    // Add current calendar month
+    const calMonth = new Date().toISOString().substring(0, 7);
+    monthSet.add(calMonth);
+    return Array.from(monthSet).sort().reverse();
+  }, [transactions]);
 
-  // Find top merchant
+  // Selected period: defaults to activeMonth, or latest month with transactions
+  const [selectedPeriod, setSelectedPeriod] = useState<string>(() => {
+    if (activeMonth && activeMonth !== 'ALL') {
+      const hasTxs = transactions.some(t => !t.isDeleted && t.date.startsWith(activeMonth));
+      if (hasTxs) return activeMonth;
+    }
+    const monthsWithTxs = Array.from(
+      new Set(transactions.filter(t => !t.isDeleted).map(t => t.date.substring(0, 7)))
+    ).sort().reverse();
+    return monthsWithTxs[0] || activeMonth || new Date().toISOString().substring(0, 7);
+  });
+
+  const handlePeriodChange = (newPeriod: string) => {
+    setSelectedPeriod(newPeriod);
+    if (newPeriod !== 'ALL') {
+      setActiveMonth(newPeriod);
+    }
+  };
+
+  const handlePrevMonth = () => {
+    if (selectedPeriod === 'ALL') {
+      const calMonth = new Date().toISOString().substring(0, 7);
+      handlePeriodChange(calMonth);
+      return;
+    }
+    const [yStr, mStr] = selectedPeriod.split('-');
+    const d = new Date(parseInt(yStr, 10), parseInt(mStr, 10) - 2, 1);
+    const prev = d.toISOString().substring(0, 7);
+    handlePeriodChange(prev);
+  };
+
+  const handleNextMonth = () => {
+    if (selectedPeriod === 'ALL') return;
+    const [yStr, mStr] = selectedPeriod.split('-');
+    const d = new Date(parseInt(yStr, 10), parseInt(mStr, 10), 1);
+    const next = d.toISOString().substring(0, 7);
+    handlePeriodChange(next);
+  };
+
+  const formatPeriodLabel = (period: string) => {
+    if (period === 'ALL') return 'All Time';
+    if (!period || !period.includes('-')) return period;
+    const [year, month] = period.split('-');
+    const date = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
+    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  // Compute dynamic summary for selectedPeriod
+  const periodSummary = useMemo(() => {
+    return computeFinancialSummary(
+      accounts,
+      creditCards,
+      investments,
+      loans,
+      debts,
+      transactions,
+      selectedPeriod
+    );
+  }, [accounts, creditCards, investments, loans, debts, transactions, selectedPeriod]);
+
+  // Compute dynamic category breakdown for selectedPeriod
+  const periodCategorySpending = useMemo(() => {
+    return getCategorySpendingBreakdown(transactions, categories, selectedPeriod);
+  }, [transactions, categories, selectedPeriod]);
+
+  // Compute daily average spend for selected period
+  const dailyAverage = useMemo(() => {
+    if (selectedPeriod === 'ALL') {
+      const dates = transactions.filter(t => !t.isDeleted && t.type === 'EXPENSE').map(t => t.date);
+      const uniqueDays = new Set(dates).size;
+      return uniqueDays > 0 ? periodSummary.monthlyExpenses / uniqueDays : 0;
+    }
+    return periodSummary.monthlyExpenses / 30;
+  }, [selectedPeriod, periodSummary.monthlyExpenses, transactions]);
+
+  // Top merchants for selected period
   const merchantTotals: { [name: string]: number } = {};
   transactions
-    .filter(t => !t.isDeleted && t.type === 'EXPENSE' && t.date.startsWith(activeMonth))
+    .filter(t => !t.isDeleted && t.type === 'EXPENSE' && (selectedPeriod === 'ALL' || t.date.startsWith(selectedPeriod)))
     .forEach(t => {
       const name = t.merchantName || t.categoryName || 'Other';
       merchantTotals[name] = (merchantTotals[name] || 0) + t.amount;
@@ -81,14 +204,132 @@ export const InsightsView: React.FC = () => {
         </button>
       </div>
 
+      {/* Month & Period Selector Navigation */}
+      <div className="bg-white dark:bg-slate-800 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex items-center space-x-1.5">
+          <button
+            onClick={handlePrevMonth}
+            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+            title="Previous Month"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-700/50 border border-slate-200/60 dark:border-slate-600/60 text-slate-800 dark:text-slate-100 font-bold text-xs sm:text-sm">
+            <Calendar size={14} className="text-emerald-500" />
+            <span>{formatPeriodLabel(selectedPeriod)}</span>
+          </div>
+          <button
+            onClick={handleNextMonth}
+            disabled={selectedPeriod === 'ALL'}
+            className={`w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 flex items-center justify-center transition-colors ${
+              selectedPeriod === 'ALL' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+            }`}
+            title="Next Month"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+
+        {/* Quick Period Buttons & Month Dropdown */}
+        <div className="flex items-center space-x-1.5">
+          <button
+            onClick={() => handlePeriodChange(new Date().toISOString().substring(0, 7))}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              selectedPeriod === new Date().toISOString().substring(0, 7)
+                ? 'bg-emerald-500 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+            }`}
+          >
+            This Month
+          </button>
+          {availableMonths.length > 1 && (
+            <button
+              onClick={() => {
+                const prev = new Date();
+                prev.setMonth(prev.getMonth() - 1);
+                handlePeriodChange(prev.toISOString().substring(0, 7));
+              }}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                selectedPeriod === (() => {
+                  const d = new Date();
+                  d.setMonth(d.getMonth() - 1);
+                  return d.toISOString().substring(0, 7);
+                })()
+                  ? 'bg-emerald-500 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+              }`}
+            >
+              Last Month
+            </button>
+          )}
+          <button
+            onClick={() => handlePeriodChange('ALL')}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              selectedPeriod === 'ALL'
+                ? 'bg-emerald-500 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+            }`}
+          >
+            All Time
+          </button>
+
+          {/* Month selector dropdown for older records */}
+          <select
+            value={selectedPeriod}
+            onChange={e => handlePeriodChange(e.target.value)}
+            className="px-2 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            aria-label="Select month"
+          >
+            <option value="ALL">All Time</option>
+            {availableMonths.map((m, mIdx) => (
+              <option key={`opt_month_${m}_${mIdx}`} value={m}>
+                {formatPeriodLabel(m)}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Helpful banner when period has no data */}
+      {periodSummary.monthlyIncome === 0 && periodSummary.monthlyExpenses === 0 && (
+        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-start sm:items-center space-x-2 text-amber-800 dark:text-amber-300">
+            <Sparkles size={16} className="shrink-0 mt-0.5 sm:mt-0 text-amber-600" />
+            <span>
+              No transactions logged for <strong>{formatPeriodLabel(selectedPeriod)}</strong>.
+              {availableMonths.length > 1 && ` Historical data is available in other months.`}
+            </span>
+          </div>
+          <div className="flex items-center space-x-2 shrink-0">
+            {availableMonths.find(m => m !== selectedPeriod) && (
+              <button
+                onClick={() => {
+                  const alt = availableMonths.find(m => m !== selectedPeriod)!;
+                  handlePeriodChange(alt);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-200/80 dark:bg-amber-900/80 text-amber-900 dark:text-amber-100 font-bold text-[11px] hover:bg-amber-300 transition-colors cursor-pointer"
+              >
+                View {formatPeriodLabel(availableMonths.find(m => m !== selectedPeriod)!)}
+              </button>
+            )}
+            <button
+              onClick={() => handlePeriodChange('ALL')}
+              className="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-[11px] hover:bg-slate-300 transition-colors cursor-pointer"
+            >
+              View All Time
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Key Metric Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 shadow-xs">
           <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide block">Total Spent</span>
           <span className="text-base sm:text-lg font-extrabold text-rose-600 dark:text-rose-400 block mt-0.5">
-            {formatINR(summary.monthlyExpenses)}
+            {formatINR(periodSummary.monthlyExpenses)}
           </span>
-          <span className="text-[10px] text-slate-400">{activeMonth}</span>
+          <span className="text-[10px] text-slate-400">{formatPeriodLabel(selectedPeriod)}</span>
         </div>
 
         <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 shadow-xs">
@@ -102,7 +343,7 @@ export const InsightsView: React.FC = () => {
         <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 shadow-xs">
           <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide block">Total Earned</span>
           <span className="text-base sm:text-lg font-extrabold text-emerald-600 dark:text-emerald-400 block mt-0.5">
-            {formatINR(summary.monthlyIncome)}
+            {formatINR(periodSummary.monthlyIncome)}
           </span>
           <span className="text-[10px] text-slate-400">Inflows</span>
         </div>
@@ -110,9 +351,9 @@ export const InsightsView: React.FC = () => {
         <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/70 shadow-xs">
           <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide block">Savings Rate</span>
           <span className="text-base sm:text-lg font-extrabold text-teal-600 dark:text-teal-400 block mt-0.5">
-            {summary.savingsRatePercent.toFixed(0)}%
+            {periodSummary.savingsRatePercent.toFixed(0)}%
           </span>
-          <span className="text-[10px] text-slate-400">{formatINR(summary.monthlySavings)}</span>
+          <span className="text-[10px] text-slate-400">{formatINR(periodSummary.monthlySavings)}</span>
         </div>
       </div>
 
@@ -128,7 +369,7 @@ export const InsightsView: React.FC = () => {
                   <span>Spend Visualization Engine</span>
                 </h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Interactive graphs & distributions for {activeMonth}
+                  Interactive graphs & distributions for {formatPeriodLabel(selectedPeriod)}
                 </p>
               </div>
 
@@ -136,7 +377,7 @@ export const InsightsView: React.FC = () => {
               <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-750 p-1 rounded-2xl border border-slate-200/80 dark:border-slate-700 shrink-0 overflow-x-auto scrollbar-none">
                 <button
                   onClick={() => setChartVisualType('pie')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap cursor-pointer ${
                     chartVisualType === 'pie'
                       ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
                       : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -148,7 +389,7 @@ export const InsightsView: React.FC = () => {
 
                 <button
                   onClick={() => setChartVisualType('bar')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap cursor-pointer ${
                     chartVisualType === 'bar'
                       ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
                       : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -160,7 +401,7 @@ export const InsightsView: React.FC = () => {
 
                 <button
                   onClick={() => setChartVisualType('trend')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap cursor-pointer ${
                     chartVisualType === 'trend'
                       ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
                       : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -172,7 +413,7 @@ export const InsightsView: React.FC = () => {
 
                 <button
                   onClick={() => setChartVisualType('channel')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 whitespace-nowrap cursor-pointer ${
                     chartVisualType === 'channel'
                       ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
                       : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -188,24 +429,24 @@ export const InsightsView: React.FC = () => {
             <div className="pt-1">
               {chartVisualType === 'pie' && (
                 <SpendsPieChart
-                  categorySpending={categorySpending}
-                  totalExpenses={summary.monthlyExpenses}
-                  activeMonth={activeMonth}
+                  categorySpending={periodCategorySpending}
+                  totalExpenses={periodSummary.monthlyExpenses}
+                  activeMonth={selectedPeriod}
                 />
               )}
 
               {chartVisualType === 'bar' && (
                 <CategoryBarChart
-                  categorySpending={categorySpending}
-                  activeMonth={activeMonth}
+                  categorySpending={periodCategorySpending}
+                  activeMonth={selectedPeriod}
                 />
               )}
 
               {chartVisualType === 'trend' && (
                 <DailySpendTrendChart
                   transactions={transactions}
-                  activeMonth={activeMonth}
-                  totalExpenses={summary.monthlyExpenses}
+                  activeMonth={selectedPeriod}
+                  totalExpenses={periodSummary.monthlyExpenses}
                 />
               )}
 
@@ -215,7 +456,7 @@ export const InsightsView: React.FC = () => {
                   accounts={accounts}
                   creditCards={creditCards}
                   paymentApps={paymentApps}
-                  activeMonth={activeMonth}
+                  activeMonth={selectedPeriod}
                 />
               )}
             </div>
@@ -228,56 +469,80 @@ export const InsightsView: React.FC = () => {
                 Detailed Category Breakdown
               </h3>
               <span className="text-xs text-slate-400">
-                {categorySpending.length} categories active
+                {periodCategorySpending.filter(c => c.totalAmount > 0).length} categories active
               </span>
             </div>
 
-            {categorySpending.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-6">No expenses logged for {activeMonth}</p>
+            {periodCategorySpending.filter(c => c.totalAmount > 0).length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-6">No expenses logged for {formatPeriodLabel(selectedPeriod)}</p>
             ) : (
               <div className="space-y-3">
-                {categorySpending.map((cat, idx) => (
-                  <div key={`ins_cat_${cat.categoryId || 'cat'}_${idx}`} className="space-y-1.5 p-2 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center space-x-2.5">
-                        <Category3DIcon
-                          name={cat.icon}
-                          categoryName={cat.categoryName}
-                          color={cat.color}
-                          size="sm"
-                          glow={true}
-                        />
-                        <div>
-                          <span className="font-bold text-slate-800 dark:text-slate-200 block text-xs">
-                            {cat.categoryName}
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {cat.transactionCount} transaction{cat.transactionCount !== 1 ? 's' : ''}
-                          </span>
+                {periodCategorySpending
+                  .filter(c => c.totalAmount > 0)
+                  .map((cat, idx) => (
+                    <div
+                      key={`ins_cat_${cat.categoryId || 'cat'}_${idx}`}
+                      onClick={() => {
+                        const existingCat = categories.find(
+                          c => c.id === cat.categoryId || c.name.toLowerCase() === cat.categoryName.toLowerCase()
+                        );
+                        setSelectedCategoryForLedger({
+                          id: cat.categoryId || existingCat?.id || cat.categoryName,
+                          categoryId: cat.categoryId || existingCat?.id || cat.categoryName,
+                          name: cat.categoryName,
+                          categoryName: cat.categoryName,
+                          icon: cat.icon || existingCat?.icon || 'Receipt',
+                          color: cat.color || existingCat?.color || '#10b981',
+                          subcategories: existingCat?.subcategories || [],
+                          totalAmount: cat.totalAmount,
+                        });
+                      }}
+                      className="space-y-1.5 p-2.5 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700/60 active:scale-[0.99] transition-all cursor-pointer border border-transparent hover:border-slate-200/70 dark:hover:border-slate-600/70 group"
+                      title={`Click to view all ${cat.categoryName} transactions`}
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center space-x-2.5">
+                          <Category3DIcon
+                            name={cat.icon}
+                            categoryName={cat.categoryName}
+                            color={cat.color}
+                            size="sm"
+                            glow={true}
+                          />
+                          <div>
+                            <span className="font-bold text-slate-800 dark:text-slate-200 block text-xs group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                              {cat.categoryName}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {cat.transactionCount} transaction{cat.transactionCount !== 1 ? 's' : ''} • Tap to view
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <div className="text-right">
+                            <span className="font-extrabold text-slate-900 dark:text-white block">
+                              {formatINR(cat.totalAmount)}
+                            </span>
+                            <span className="text-[10px] font-semibold text-slate-500">
+                              {cat.percentage.toFixed(1)}%
+                            </span>
+                          </div>
+                          <ChevronRight size={15} className="text-slate-400 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all shrink-0" />
                         </div>
                       </div>
 
-                      <div className="text-right">
-                        <span className="font-extrabold text-slate-900 dark:text-white block">
-                          {formatINR(cat.totalAmount)}
-                        </span>
-                        <span className="text-[10px] font-semibold text-slate-500">
-                          {cat.percentage.toFixed(1)}%
-                        </span>
+                      <div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.min(100, cat.percentage)}%`,
+                            backgroundColor: cat.color,
+                          }}
+                        />
                       </div>
                     </div>
-
-                    <div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{
-                          width: `${Math.min(100, cat.percentage)}%`,
-                          backgroundColor: cat.color,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             )}
           </div>
@@ -312,11 +577,11 @@ export const InsightsView: React.FC = () => {
           <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 border border-slate-200/70 dark:border-slate-700/70 shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center space-x-1.5">
               <BarChart2 size={16} className="text-cyan-500" />
-              <span>Monthly Inflow vs Outflow Comparison</span>
+              <span>Inflow vs Outflow Comparison ({formatPeriodLabel(selectedPeriod)})</span>
             </h3>
 
             {/* Visual Bar Comparison Chart */}
-            <CashflowComparisonChart summary={summary} activeMonth={activeMonth} />
+            <CashflowComparisonChart summary={periodSummary} activeMonth={selectedPeriod} />
 
             {/* Progress Bars Breakdown */}
             <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-700/60">
@@ -325,7 +590,7 @@ export const InsightsView: React.FC = () => {
                   <span className="text-emerald-600 dark:text-emerald-400 flex items-center">
                     <ArrowDownLeft size={14} className="mr-1" /> Total Income (Inflows)
                   </span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatINR(summary.monthlyIncome)}</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatINR(periodSummary.monthlyIncome)}</span>
                 </div>
                 <div className="w-full h-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-full overflow-hidden">
                   <div className="h-full bg-emerald-500 rounded-full w-full" />
@@ -337,13 +602,13 @@ export const InsightsView: React.FC = () => {
                   <span className="text-rose-600 dark:text-rose-400 flex items-center">
                     <ArrowUpRight size={14} className="mr-1" /> Total Expenses (Outflows)
                   </span>
-                  <span className="text-rose-600 dark:text-rose-400 font-bold">{formatINR(summary.monthlyExpenses)}</span>
+                  <span className="text-rose-600 dark:text-rose-400 font-bold">{formatINR(periodSummary.monthlyExpenses)}</span>
                 </div>
                 <div className="w-full h-3 bg-rose-50 dark:bg-rose-950/40 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-rose-500 rounded-full"
                     style={{
-                      width: `${summary.monthlyIncome > 0 ? Math.min(100, (summary.monthlyExpenses / summary.monthlyIncome) * 100) : 100}%`,
+                      width: `${periodSummary.monthlyIncome > 0 ? Math.min(100, (periodSummary.monthlyExpenses / periodSummary.monthlyIncome) * 100) : 100}%`,
                     }}
                   />
                 </div>
@@ -355,14 +620,14 @@ export const InsightsView: React.FC = () => {
                     <Sparkles size={14} className="mr-1" /> Net Savings Retained
                   </span>
                   <span className="text-teal-600 dark:text-teal-400 font-bold">
-                    {formatINR(summary.monthlySavings)} ({summary.savingsRatePercent.toFixed(0)}%)
+                    {formatINR(periodSummary.monthlySavings)} ({periodSummary.savingsRatePercent.toFixed(0)}%)
                   </span>
                 </div>
                 <div className="w-full h-3 bg-teal-50 dark:bg-teal-950/40 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-teal-500 rounded-full"
                     style={{
-                      width: `${Math.max(0, Math.min(100, summary.savingsRatePercent))}%`,
+                      width: `${Math.max(0, Math.min(100, periodSummary.savingsRatePercent))}%`,
                     }}
                   />
                 </div>
@@ -384,7 +649,7 @@ export const InsightsView: React.FC = () => {
             <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/60 dark:border-slate-700/60 text-center">
               <span className="text-xs text-slate-500 block font-medium">Total Net Worth</span>
               <span className="text-3xl font-black text-slate-900 dark:text-white block mt-1">
-                {formatINR(summary.netWorth)}
+                {formatINR(periodSummary.netWorth)}
               </span>
             </div>
 
@@ -394,7 +659,7 @@ export const InsightsView: React.FC = () => {
                   Total Assets
                 </span>
                 <span className="text-xl font-extrabold text-emerald-700 dark:text-emerald-400 block mt-1">
-                  {formatINR(summary.totalAssets)}
+                  {formatINR(periodSummary.totalAssets)}
                 </span>
                 <span className="text-[11px] text-emerald-600 dark:text-emerald-400 block mt-1">
                   Banks, Wallets, Cash, FDs, Investments & Lent Money
@@ -406,7 +671,7 @@ export const InsightsView: React.FC = () => {
                   Total Liabilities
                 </span>
                 <span className="text-xl font-extrabold text-rose-700 dark:text-rose-400 block mt-1">
-                  {formatINR(summary.totalLiabilities)}
+                  {formatINR(periodSummary.totalLiabilities)}
                 </span>
                 <span className="text-[11px] text-rose-600 dark:text-rose-400 block mt-1">
                   Credit Card Outstanding, Active Loans & Borrowed Money
@@ -415,6 +680,22 @@ export const InsightsView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Category Transactions Drilldown Modal */}
+      {selectedCategoryForLedger && (
+        <CategoryTransactionsModal
+          isOpen={Boolean(selectedCategoryForLedger)}
+          onClose={() => setSelectedCategoryForLedger(null)}
+          category={selectedCategoryForLedger}
+          categoryId={selectedCategoryForLedger.categoryId}
+          categoryName={selectedCategoryForLedger.categoryName}
+          categoryIcon={selectedCategoryForLedger.icon}
+          categoryColor={selectedCategoryForLedger.color}
+          initialActiveMonth={selectedPeriod}
+          onSelectTransaction={onSelectTransaction}
+          onOpenAddTransaction={onOpenAddTransaction}
+        />
       )}
     </div>
   );

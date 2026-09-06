@@ -57,11 +57,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { SpendsPieChart } from '../insights/charts/SpendsPieChart';
-import { CategoryBarChart } from '../insights/charts/CategoryBarChart';
-import { DailySpendTrendChart } from '../insights/charts/DailySpendTrendChart';
-import { CashflowComparisonChart } from '../insights/charts/CashflowComparisonChart';
-import { PaymentChannelChart } from '../insights/charts/PaymentChannelChart';
+import { InsightsView } from '../insights/InsightsView';
 
 interface HomeDashboardProps {
   initialSubtab?: 'overview' | 'insights';
@@ -101,6 +97,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
     reorderCreditCards,
   } = useMoney();
   const [activeView, setActiveView] = useState<'overview' | 'insights'>(initialSubtab);
+
+  useEffect(() => {
+    setActiveView(initialSubtab);
+  }, [initialSubtab]);
   const [insightsSection, setInsightsSection] = useState<'spending' | 'cashflow' | 'networth'>('spending');
   const [chartVisualType, setChartVisualType] = useState<'pie' | 'bar' | 'trend' | 'channel'>('pie');
   const [showBalance, setShowBalance] = useState(true);
@@ -1529,6 +1529,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = React.memo(({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {activeView === 'insights' && (
+        <div className="pt-1">
+          <InsightsView
+            onSelectTransaction={onSelectTransaction}
+            onOpenAddTransaction={onOpenAdd}
+          />
         </div>
       )}
 

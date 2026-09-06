@@ -30,10 +30,16 @@ export const DailySpendTrendChart: React.FC<DailySpendTrendChartProps> = ({
 
   // Compute daily numbers for the month
   const { chartData, peakDay, dailyAverage, totalDaysInMonth } = useMemo(() => {
-    const [yearStr, monthStr] = activeMonth.split('-');
-    const year = parseInt(yearStr, 10);
-    const month = parseInt(monthStr, 10);
-    const daysInMonth = new Date(year, month, 0).getDate();
+    let year = new Date().getFullYear();
+    let month = new Date().getMonth() + 1;
+    let daysInMonth = 30;
+
+    if (activeMonth && activeMonth !== 'ALL' && activeMonth.includes('-')) {
+      const [yearStr, monthStr] = activeMonth.split('-');
+      year = parseInt(yearStr, 10) || year;
+      month = parseInt(monthStr, 10) || month;
+      daysInMonth = new Date(year, month, 0).getDate();
+    }
 
     const dayTotals: { [day: number]: { amount: number; count: number; transactions: Transaction[] } } = {};
     for (let d = 1; d <= daysInMonth; d++) {
@@ -41,9 +47,10 @@ export const DailySpendTrendChart: React.FC<DailySpendTrendChartProps> = ({
     }
 
     transactions
-      .filter(t => !t.isDeleted && t.type === 'EXPENSE' && t.date.startsWith(activeMonth))
+      .filter(t => !t.isDeleted && t.type === 'EXPENSE' && (activeMonth === 'ALL' || t.date.startsWith(activeMonth)))
       .forEach(t => {
-        const d = parseInt(t.date.split('-')[2], 10);
+        const parts = t.date.split('-');
+        const d = parts.length > 2 ? parseInt(parts[2], 10) : 1;
         if (dayTotals[d]) {
           dayTotals[d].amount += t.amount;
           dayTotals[d].count += 1;

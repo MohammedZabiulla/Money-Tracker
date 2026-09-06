@@ -486,6 +486,18 @@ export interface AccountReconciliation {
 export type AccountSortOption = 'CUSTOM' | 'NAME_ASC' | 'NAME_DESC' | 'BALANCE_DESC' | 'BALANCE_ASC' | 'TYPE' | 'RECENT' | 'INSTITUTION' | 'DATE_NEWEST' | 'DATE_OLDEST';
 export type CardSortOption = 'CUSTOM' | 'NAME_ASC' | 'NAME_DESC' | 'LIMIT_DESC' | 'LIMIT_ASC' | 'OUTSTANDING_DESC' | 'OUTSTANDING_ASC' | 'DUE_DATE' | 'DUE_DATE_ASC' | 'RECENT' | 'ISSUER_ASC' | 'UTILIZATION_DESC';
 
+export type MiddleNavActionType =
+  | 'add_transaction'
+  | 'quick_note'
+  | 'budgets'
+  | 'subscriptions'
+  | 'loans'
+  | 'investments'
+  | 'goals'
+  | 'guide'
+  | 'import_export'
+  | 'analytics';
+
 export interface AppSettings {
   currencyCode: 'INR';
   currencySymbol: '₹';
@@ -502,6 +514,7 @@ export interface AppSettings {
   accountSortPreference?: AccountSortOption;
   cardSortPreference?: CardSortOption;
   lowBalanceThreshold: number; // e.g. 5000
+  middleNavAction?: MiddleNavActionType;
   notificationPreferences: {
     billReminders: boolean;
     budgetAlerts: boolean;

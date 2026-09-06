@@ -22,6 +22,10 @@ import {
   Flame,
   ArrowRight,
   RotateCcw,
+  Smile,
+  Image as ImageIcon,
+  Upload,
+  Link as LinkIcon,
 } from 'lucide-react';
 
 interface CategoryManagementModalProps {
@@ -276,6 +280,17 @@ const AVAILABLE_ICONS = [
   'Coffee', 'Fuel', 'CreditCard', 'HandCoins', 'ArrowRightLeft',
 ];
 
+const POPULAR_EMOJIS = [
+  '🍔', '🍕', '☕', '🍺', '🍜', '🍩', '🍣', '🍷',
+  '🛒', '🛍️', '👗', '👟', '💍', '🎁', '📱', '💻',
+  '🚗', '🚖', '✈️', '🚂', '⛽', '🛵', '🚲', '🛳️',
+  '🏠', '💡', '🛋️', '🔑', '🧹', '🔧', '📦', '🏢',
+  '🎬', '🎮', '🎵', '📺', '🎟️', '🎧', '🎳', '🎪',
+  '💊', '🏥', '🩺', '🏋️', '🧘', '⚽', '🏊', '🚴',
+  '📚', '🎓', '✏️', '📝', '💼', '💰', '💵', '💳',
+  '🐾', '🐶', '🐱', '👶', '❤️', '🌴', '🏖️', '⚡'
+];
+
 const PRESET_COLORS = [
   '#f43f5e', '#ec4899', '#d946ef', '#a855f7', '#8b5cf6',
   '#6366f1', '#3b82f6', '#0ea5e9', '#06b6d4', '#14b8a6',
@@ -308,9 +323,27 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
   const [name, setName] = useState('');
   const [type, setType] = useState<'EXPENSE' | 'INCOME' | 'BOTH'>('EXPENSE');
   const [icon, setIcon] = useState('ShoppingBag');
+  const [iconShape, setIconShape] = useState<'squircle' | 'circle' | 'rounded'>('squircle');
+  const [iconMode, setIconMode] = useState<'ICONS' | 'EMOJIS' | 'IMAGE'>('ICONS');
+  const [customEmojiInput, setCustomEmojiInput] = useState('');
+  const [customImageUrlInput, setCustomImageUrlInput] = useState('');
+  const [imageUploadLoading, setImageUploadLoading] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
   const [color, setColor] = useState('#f43f5e');
   const [subcategoriesInput, setSubcategoriesInput] = useState('');
   const [newSubInput, setNewSubInput] = useState('');
+
+  const detectIconMode = (ic: string) => {
+    if (ic.startsWith('data:image') || ic.startsWith('http')) {
+      setIconMode('IMAGE');
+      setCustomImageUrlInput(ic);
+    } else if (/\p{Extended_Pictographic}/u.test(ic) || (ic.length <= 4 && !/^[A-Za-z0-9_]+$/.test(ic))) {
+      setIconMode('EMOJIS');
+      setCustomEmojiInput(ic);
+    } else {
+      setIconMode('ICONS');
+    }
+  };
 
   // Auto-open edit mode if initialCategoryToEdit is provided
   useEffect(() => {
@@ -321,6 +354,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
       setIcon(initialCategoryToEdit.icon || 'ShoppingBag');
       setColor(initialCategoryToEdit.color || '#f43f5e');
       setSubcategoriesInput((initialCategoryToEdit.subcategories || []).join(', '));
+      detectIconMode(initialCategoryToEdit.icon || 'ShoppingBag');
       setIsFormOpen(true);
     }
   }, [isOpen, initialCategoryToEdit]);
@@ -364,6 +398,9 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     setName('');
     setType(selectedTypeTab === 'INCOME' ? 'INCOME' : 'EXPENSE');
     setIcon('ShoppingBag');
+    setIconMode('ICONS');
+    setCustomEmojiInput('');
+    setCustomImageUrlInput('');
     setColor(PRESET_COLORS[Math.floor(Math.random() * PRESET_COLORS.length)]);
     setSubcategoriesInput('');
     setIsFormOpen(true);
@@ -377,6 +414,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     setIcon(cat.icon);
     setColor(cat.color);
     setSubcategoriesInput((cat.subcategories || []).join(', '));
+    detectIconMode(cat.icon);
     setIsFormOpen(true);
   };
 
@@ -389,6 +427,7 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
     setIcon(cat.icon);
     setColor(cat.color);
     setSubcategoriesInput((cat.subcategories || []).join(', '));
+    detectIconMode(cat.icon);
     setIsFormOpen(true);
   };
 
@@ -528,14 +567,20 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
                 categoryName={name || 'Category'}
                 color={color}
                 size="lg"
+                shape={iconShape}
                 glow={true}
               />
               <div className="min-w-0 flex-1">
-                <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
-                  {name || 'Category Name'}
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
+                    {name || 'Category Name'}
+                  </h4>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    3D Custom Icon
+                  </span>
+                </div>
                 <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                  {type} • 3D Skeuomorphic Emblem
+                  {type} • Shape: {iconShape}
                 </p>
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {subcategoriesInput.split(',').filter(Boolean).slice(0, 3).map((sub, idx) => (
@@ -588,27 +633,241 @@ export const CategoryManagementModal: React.FC<CategoryManagementModalProps> = (
               </div>
             </div>
 
-            {/* 3D Icon Emblem Selector */}
-            <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1.5">
-                Select 3D Icon Emblem
-              </label>
-              <div className="grid grid-cols-6 gap-2 max-h-36 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
-                {AVAILABLE_ICONS.map(ic => (
-                  <button
-                    key={ic}
-                    type="button"
-                    onClick={() => setIcon(ic)}
-                    className={`p-2 rounded-2xl flex items-center justify-center transition-all ${
-                      icon === ic
-                        ? 'bg-emerald-500/20 ring-2 ring-emerald-500'
-                        : 'hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    <Category3DIcon name={ic} size="sm" color={color} glow={false} />
-                  </button>
-                ))}
+            {/* 3D Icon Designer & Customizer */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  Custom 3D Icon Design
+                </label>
+                {/* Shape Selector */}
+                <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl text-[10px] font-bold">
+                  {(['squircle', 'circle', 'rounded'] as const).map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setIconShape(s)}
+                      className={`px-2 py-0.5 rounded-lg capitalize transition-all ${
+                        iconShape === s
+                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* Mode Tabs: 3D Emblems vs Emojis vs Image Upload */}
+              <div className="flex rounded-2xl bg-slate-100 dark:bg-slate-850 p-1 border border-slate-200/60 dark:border-slate-700/60">
+                <button
+                  type="button"
+                  onClick={() => setIconMode('ICONS')}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all ${
+                    iconMode === 'ICONS'
+                      ? 'bg-white dark:bg-slate-750 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Sparkles size={13} className="text-amber-500" />
+                  <span>3D Emblems</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIconMode('EMOJIS')}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all ${
+                    iconMode === 'EMOJIS'
+                      ? 'bg-white dark:bg-slate-750 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Smile size={13} className="text-emerald-500" />
+                  <span>Emojis</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIconMode('IMAGE')}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition-all ${
+                    iconMode === 'IMAGE'
+                      ? 'bg-white dark:bg-slate-750 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <ImageIcon size={13} className="text-blue-500" />
+                  <span>Custom Image</span>
+                </button>
+              </div>
+
+              {/* Mode Content: 3D Emblems */}
+              {iconMode === 'ICONS' && (
+                <div className="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-850 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
+                  {AVAILABLE_ICONS.map(ic => (
+                    <button
+                      key={ic}
+                      type="button"
+                      onClick={() => setIcon(ic)}
+                      className={`p-1.5 rounded-2xl flex items-center justify-center transition-all ${
+                        icon === ic
+                          ? 'bg-emerald-500/20 ring-2 ring-emerald-500 scale-105'
+                          : 'hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <Category3DIcon name={ic} size="sm" color={color} shape={iconShape} glow={icon === ic} />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Mode Content: Emojis */}
+              {iconMode === 'EMOJIS' && (
+                <div className="space-y-2 bg-slate-50 dark:bg-slate-850 p-2.5 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
+                  {/* Direct Emoji Input Field */}
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      placeholder="Type/paste ANY emoji: 🍔, 🚀, 💻, 🌴, ☕..."
+                      value={customEmojiInput}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setCustomEmojiInput(val);
+                        if (val.trim()) {
+                          // Extract last character or emoji
+                          const chars = Array.from(val.trim());
+                          const latestEmoji = chars[chars.length - 1];
+                          setIcon(latestEmoji);
+                        }
+                      }}
+                      className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:border-emerald-500 font-medium"
+                    />
+                    {customEmojiInput && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomEmojiInput('');
+                        }}
+                        className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Popular Emoji Palette */}
+                  <div className="grid grid-cols-8 gap-1.5 max-h-36 overflow-y-auto p-1">
+                    {POPULAR_EMOJIS.map((em, emIdx) => (
+                      <button
+                        key={`pop_em_${em}_${emIdx}`}
+                        type="button"
+                        onClick={() => {
+                          setIcon(em);
+                          setCustomEmojiInput(em);
+                        }}
+                        className={`w-9 h-9 rounded-xl text-lg flex items-center justify-center transition-all ${
+                          icon === em
+                            ? 'bg-emerald-500/25 ring-2 ring-emerald-500 scale-110'
+                            : 'hover:bg-slate-200 dark:hover:bg-slate-750'
+                        }`}
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Mode Content: Custom Image Upload / URL */}
+              {iconMode === 'IMAGE' && (
+                <div className="space-y-2.5 bg-slate-50 dark:bg-slate-850 p-3 rounded-2xl border border-slate-200/60 dark:border-slate-700/60">
+                  {/* File Upload Option */}
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                      Upload from Device (Photo, Logo, Icon)
+                    </label>
+                    <label className="flex items-center justify-center space-x-2 py-3 px-4 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 rounded-2xl bg-white dark:bg-slate-800 cursor-pointer transition-colors group">
+                      <Upload size={16} className="text-slate-400 group-hover:text-emerald-500" />
+                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 group-hover:text-emerald-600">
+                        {imageUploadLoading ? 'Optimizing Image...' : 'Choose File or Take Photo'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          setImageUploadLoading(true);
+                          setImageUploadError(null);
+
+                          const reader = new FileReader();
+                          reader.onload = event => {
+                            const img = new Image();
+                            img.onload = () => {
+                              // Resize to 96x96 for crisp small 3D icon
+                              const canvas = document.createElement('canvas');
+                              canvas.width = 96;
+                              canvas.height = 96;
+                              const ctx = canvas.getContext('2d');
+                              if (ctx) {
+                                ctx.drawImage(img, 0, 0, 96, 96);
+                                const compressedDataUrl = canvas.toDataURL('image/png', 0.85);
+                                setIcon(compressedDataUrl);
+                                setCustomImageUrlInput(compressedDataUrl);
+                              }
+                              setImageUploadLoading(false);
+                            };
+                            img.onerror = () => {
+                              setImageUploadError('Unable to load image file.');
+                              setImageUploadLoading(false);
+                            };
+                            img.src = event.target?.result as string;
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                    {imageUploadError && (
+                      <p className="text-[10px] text-rose-500 font-semibold mt-1">{imageUploadError}</p>
+                    )}
+                  </div>
+
+                  {/* Or Web Image URL */}
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                      Or Paste Image Link / URL
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative flex-1">
+                        <LinkIcon size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="url"
+                          placeholder="https://example.com/logo.png"
+                          value={customImageUrlInput}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setCustomImageUrlInput(val);
+                            if (val.trim()) {
+                              setIcon(val.trim());
+                            }
+                          }}
+                          className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:border-emerald-500 font-medium"
+                        />
+                      </div>
+                      {icon.startsWith('data:image') || icon.startsWith('http') ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIcon('ShoppingBag');
+                            setCustomImageUrlInput('');
+                          }}
+                          className="text-xs text-rose-500 hover:underline px-2 font-bold"
+                        >
+                          Reset
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Color Palette */}

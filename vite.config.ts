@@ -7,12 +7,28 @@ export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     optimizeDeps: {
-      include: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+      include: [
+        'react',
+        'react-dom',
+        'react-is',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        'use-sync-external-store',
+        'use-sync-external-store/shim',
+        'use-sync-external-store/with-selector',
+        'recharts',
+        'firebase/app',
+        'firebase/auth',
+        'firebase/firestore',
+      ],
     },
     resolve: {
-      dedupe: ['react', 'react-dom'],
+      dedupe: ['react', 'react-dom', 'react-is', 'use-sync-external-store'],
       alias: {
         '@': path.resolve(__dirname, '.'),
+        'react': path.resolve(__dirname, 'node_modules/react'),
+        'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+        'react-is': path.resolve(__dirname, 'node_modules/react-is'),
       },
     },
     server: {
