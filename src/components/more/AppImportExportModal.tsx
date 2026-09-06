@@ -40,7 +40,15 @@ import {
   Filter,
   RefreshCw,
   Sliders,
+  Cloud,
+  HardDrive,
 } from 'lucide-react';
+import {
+  requestGoogleDriveToken,
+  uploadBackupToGoogleDrive,
+  listGoogleDriveBackups,
+  downloadGoogleDriveBackup,
+} from '../../lib/googleDriveService';
 
 interface AppImportExportModalProps {
   isOpen: boolean;
@@ -64,6 +72,108 @@ export const AppImportExportModal: React.FC<AppImportExportModalProps> = ({
   // Export State
   const [exportOptions, setExportOptions] = useState<AppDataExportOptions>(DEFAULT_EXPORT_OPTIONS);
   const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
+
+  // Google Drive State
+  const [isDriveLoading, setIsDriveLoading] = useState(false);
+  const [driveMessage, setDriveMessage] = useState<string | null>(null);
+  const [isDriveRestoreModalOpen, setIsDriveRestoreModalOpen] = useState(false);
+  const [driveBackupsList, setDriveBackupsList] = useState<Array<{ id: string; name: string; modifiedTime: string }>>([]);
+  const [googleClientIdInput, setGoogleClientIdInput] = useState(localStorage.getItem('money_tracker_google_client_id') || '');
+  const [isClientIdModalOpen, setIsClientIdModalOpen] = useState(false);
+
+  const getClientId = () => {
+    return localStorage.getItem('money_tracker_google_client_id') || import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  };
+
+  const handleGoogleDriveBackup = async () => {
+    const clientId = getClientId();
+    if (!clientId) {
+      setIsClientIdModalOpen(true);
+      return;
+    }
+
+    setIsDriveLoading(true);
+    setDriveMessage(null);
+    try {
+      const token = await requestGoogleDriveToken(clientId);
+      const state = {
+        accounts: context.accounts,
+        creditCards: context.creditCards,
+        categories: context.categories,
+        merchants: context.merchants,
+        paymentApps: context.paymentApps,
+        transactions: context.transactions,
+        recurring: context.recurring,
+        subscriptions: context.subscriptions,
+        budgets: context.budgets,
+        loans: context.loans,
+        investments: context.investments,
+        debts: context.debts,
+        reconciliations: context.reconciliations,
+        goals: context.goals,
+        templates: context.templates,
+        settings: context.settings,
+        activityLogs: context.activityLogs,
+      };
+      const result = await uploadBackupToGoogleDrive(token, state);
+      setDriveMessage(`Successfully backed up to Google Drive (${result.fileName})!`);
+      setTimeout(() => setDriveMessage(null), 6000);
+    } catch (err: any) {
+      if (err?.message === 'GOOGLE_CLIENT_ID_REQUIRED') {
+        setIsClientIdModalOpen(true);
+      } else {
+        setDriveMessage(err?.message || 'Google Drive backup failed.');
+      }
+    } finally {
+      setIsDriveLoading(false);
+    }
+  };
+
+  const handleOpenGoogleDriveRestore = async () => {
+    const clientId = getClientId();
+    if (!clientId) {
+      setIsClientIdModalOpen(true);
+      return;
+    }
+
+    setIsDriveLoading(true);
+    setDriveMessage(null);
+    try {
+      const token = await requestGoogleDriveToken(clientId);
+      const files = await listGoogleDriveBackups(token);
+      setDriveBackupsList(files);
+      setIsDriveRestoreModalOpen(true);
+    } catch (err: any) {
+      if (err?.message === 'GOOGLE_CLIENT_ID_REQUIRED') {
+        setIsClientIdModalOpen(true);
+      } else {
+        setDriveMessage(err?.message || 'Failed to list Google Drive backups.');
+      }
+    } finally {
+      setIsDriveLoading(false);
+    }
+  };
+
+  const handleSelectDriveBackupToRestore = async (fileId: string) => {
+    const clientId = getClientId();
+    setIsDriveLoading(true);
+    setDriveMessage(null);
+    try {
+      const token = await requestGoogleDriveToken(clientId);
+      const rawData = await downloadGoogleDriveBackup(token, fileId);
+      const parsed = await parseAppImportFile(new File([JSON.stringify(rawData)], 'gdrive_backup.json', { type: 'application/json' }));
+      if (!parsed.isValid) {
+        throw new Error('Downloaded Google Drive file is not a valid Money Tracker backup.');
+      }
+      setParsedData(parsed);
+      setIsDriveRestoreModalOpen(false);
+      setActiveTab('IMPORT');
+    } catch (err: any) {
+      setDriveMessage(err?.message || 'Failed to restore Google Drive backup.');
+    } finally {
+      setIsDriveLoading(false);
+    }
+  };
 
   // Import State
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -329,6 +439,27 @@ export const AppImportExportModal: React.FC<AppImportExportModalProps> = ({
           {/* ============================================================= */}
           {activeTab === 'EXPORT' && (
             <div className="space-y-6">
+              {/* Instant JSON Full Backup Card */}
+              <div className="p-4 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2.5 rounded-xl bg-purple-600 text-white shadow-sm">
+                    <Database size={18} />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-900 dark:text-white">Instant JSON Full Backup</h5>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Download a 100% lossless snapshot of all accounts, budgets & transactions.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleQuickExport('json')}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm transition-all shrink-0 cursor-pointer flex items-center space-x-1.5"
+                >
+                  <Download size={14} />
+                  <span>Download Backup</span>
+                </button>
+              </div>
+
               {/* Success Toast */}
               {exportSuccessMessage && (
                 <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center space-x-2 shadow-sm animate-in fade-in">
@@ -857,6 +988,140 @@ export const AppImportExportModal: React.FC<AppImportExportModalProps> = ({
           )}
         </div>
       </div>
+      {/* Google Drive Backups Modal */}
+      {isDriveRestoreModalOpen && (
+        <div className="fixed inset-0 z-[110] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg p-6 space-y-6 shadow-2xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center">
+                  <Cloud size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                    Google Drive Backups
+                  </h3>
+                  <p className="text-xs text-slate-500">Select a backup file to restore</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDriveRestoreModalOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="max-h-64 overflow-y-auto space-y-2.5">
+              {driveBackupsList.length === 0 ? (
+                <div className="text-center py-8 text-xs text-slate-500">
+                  No backup files found in your Google Drive.
+                </div>
+              ) : (
+                driveBackupsList.map(file => (
+                  <div
+                    key={file.id}
+                    className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex items-center justify-between hover:border-blue-500 transition-all"
+                  >
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">{file.name}</h4>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Modified: {new Date(file.modifiedTime).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isDriveLoading}
+                      onClick={() => handleSelectDriveBackupToRestore(file.id)}
+                      className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer"
+                    >
+                      {isDriveLoading ? 'Restoring...' : 'Restore'}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsDriveRestoreModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Google Client ID Configuration Modal */}
+      {isClientIdModalOpen && (
+        <div className="fixed inset-0 z-[120] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md p-6 space-y-6 shadow-2xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center">
+                  <Cloud size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                    Google OAuth Client ID
+                  </h3>
+                  <p className="text-xs text-slate-500">Required for Google Drive Cloud access</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsClientIdModalOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                To backup and restore directly with Google Drive, please enter your Google Cloud OAuth 2.0 Client ID (or the app's project client ID). This is stored securely in your browser's local storage.
+              </p>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Google Client ID (.apps.googleusercontent.com)
+                </label>
+                <input
+                  type="text"
+                  value={googleClientIdInput}
+                  onChange={(e) => setGoogleClientIdInput(e.target.value)}
+                  placeholder="e.g. 123456789-abc.apps.googleusercontent.com"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsClientIdModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (googleClientIdInput.trim()) {
+                    localStorage.setItem('money_tracker_google_client_id', googleClientIdInput.trim());
+                    setIsClientIdModalOpen(false);
+                    setDriveMessage('Google Client ID saved successfully! You can now use Google Drive backup/restore.');
+                    setTimeout(() => setDriveMessage(null), 5000);
+                  }
+                }}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer"
+              >
+                Save & Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

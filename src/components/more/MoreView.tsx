@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { useMoney } from '../../context/MoneyContext';
+import { useAuth } from '../../context/AuthContext';
 import { runAccountingSuite, TestResult } from '../../lib/accountingTests';
 import { exportToExcel, exportJsonBackup, restoreJsonBackup } from '../../lib/storage';
 import { Emblem3D } from '../common/IconHelper';
@@ -41,8 +42,8 @@ import {
   FileX2,
   BookOpen,
   FileText,
-  Fingerprint,
   KeyRound,
+  Cloud,
 } from 'lucide-react';
 
 export const MoreView: React.FC = React.memo(() => {
@@ -82,6 +83,58 @@ export const MoreView: React.FC = React.memo(() => {
   const [showAppImportExportModal, setShowAppImportExportModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState(false);
+  const auth = useAuth();
+  const [cloudMessage, setCloudMessage] = useState<string | null>(null);
+
+  const handleCloudSync = async () => {
+    try {
+      if (!auth.user) {
+        await auth.signIn();
+      }
+      const currentState = {
+        accounts: context.accounts,
+        creditCards: context.creditCards,
+        categories: context.categories,
+        merchants: context.merchants,
+        paymentApps: context.paymentApps,
+        transactions: context.transactions,
+        recurring: context.recurring,
+        subscriptions: context.subscriptions,
+        budgets: context.budgets,
+        loans: context.loans,
+        investments: context.investments,
+        debts: context.debts,
+        reconciliations: context.reconciliations,
+        goals: context.goals,
+        templates: context.templates,
+        settings: context.settings,
+        activityLogs: context.activityLogs,
+      };
+      await auth.pushStateToCloud(currentState);
+      setCloudMessage('Data securely synced to Cloud Firestore! Safe across all devices.');
+      setTimeout(() => setCloudMessage(null), 5000);
+    } catch (err: any) {
+      setCloudMessage(err?.message || 'Cloud sync failed.');
+    }
+  };
+
+  const handleCloudRestore = async () => {
+    try {
+      if (!auth.user) {
+        await auth.signIn();
+      }
+      const cloudState = await auth.pullStateFromCloud();
+      if (cloudState) {
+        context.loadBackupState(cloudState);
+        setCloudMessage('Data successfully restored from Cloud sync!');
+        setTimeout(() => setCloudMessage(null), 5000);
+      } else {
+        setCloudMessage('No cloud backup found for this account.');
+      }
+    } catch (err: any) {
+      setCloudMessage(err?.message || 'Cloud restore failed.');
+    }
+  };
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [confirmPinInput, setConfirmPinInput] = useState('');
@@ -498,6 +551,62 @@ export const MoreView: React.FC = React.memo(() => {
             </div>
           </div>
         </div>
+
+        {/* 3. Cloud Firestore Multi-Device Sync & Backup */}
+        <div className="p-5 rounded-3xl bg-gradient-to-br from-blue-500/10 via-cyan-500/10 to-indigo-500/10 border-2 border-blue-500/30 dark:border-blue-500/40 shadow-xs flex flex-col justify-between space-y-4">
+          <div className="flex items-start justify-between flex-wrap gap-2">
+            <div className="flex items-center space-x-3.5">
+              <div className="p-2.5 rounded-2xl bg-blue-600 text-white shadow-md">
+                <Cloud size={20} />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">Cloud Firestore Live Sync & Backup</h4>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold">
+                    {auth.user ? (auth.user.isAnonymous ? 'Cloud Session' : auth.user.email || 'Connected') : 'Offline'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Securely store your accounts & transactions in the cloud so your data is never lost even if you lose your device.
+                </p>
+              </div>
+            </div>
+            <div className="text-right text-[11px] text-slate-400">
+              {auth.syncStatus === 'syncing' ? 'Syncing...' : auth.syncStatus === 'error' ? 'Sync Error' : auth.lastSynced ? `Synced: ${new Date(auth.lastSynced).toLocaleTimeString()}` : 'Not synced yet'}
+            </div>
+          </div>
+
+          {cloudMessage && (
+            <div className="p-3 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-800 dark:text-blue-200 text-xs font-semibold">
+              {cloudMessage}
+            </div>
+          )}
+
+          <div className="pt-1 flex flex-wrap gap-2">
+            <button
+              onClick={handleCloudSync}
+              className="flex-1 min-w-[140px] py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/20 flex items-center justify-center space-x-1.5 cursor-pointer"
+            >
+              <Cloud size={14} />
+              <span>{auth.user ? 'Sync Now to Cloud' : 'Sign in & Backup to Cloud'}</span>
+            </button>
+            <button
+              onClick={handleCloudRestore}
+              className="flex-1 min-w-[140px] py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
+            >
+              <RefreshCw size={14} />
+              <span>Restore from Cloud</span>
+            </button>
+            {auth.user && !auth.user.isAnonymous && (
+              <button
+                onClick={() => auth.signOut()}
+                className="py-2.5 px-4 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 text-xs font-bold transition-all cursor-pointer"
+              >
+                Sign Out
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* --------------------------------------------------------------------- */}
@@ -529,7 +638,7 @@ export const MoreView: React.FC = React.memo(() => {
           </button>
         </div>
 
-        {/* App Security & Biometric Lock Card */}
+        {/* App Security PIN Lock Card */}
         <div className="p-5 bg-gradient-to-br from-purple-500/10 via-indigo-500/10 to-slate-500/10 dark:from-purple-950/40 dark:via-indigo-950/40 dark:to-slate-900/40 rounded-3xl border border-purple-500/30 dark:border-purple-500/20 flex flex-col justify-between space-y-4 shadow-xs">
           <div className="flex items-start space-x-3.5">
             <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm">
@@ -538,7 +647,7 @@ export const MoreView: React.FC = React.memo(() => {
             <div>
               <div className="flex items-center space-x-2">
                 <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
-                  App PIN & Biometric Lock
+                  App Security PIN
                 </h4>
                 <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
                   settings.isPinEnabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
@@ -547,7 +656,7 @@ export const MoreView: React.FC = React.memo(() => {
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Secure your financial records with a 4-digit PIN and fingerprint/Face ID unlock.
+                Secure your financial records with a 4-digit security PIN lock.
               </p>
             </div>
           </div>
@@ -574,20 +683,6 @@ export const MoreView: React.FC = React.memo(() => {
             >
               <Lock size={13} />
               <span>{settings.isPinEnabled ? 'Disable PIN Lock' : 'Enable PIN Lock'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => updateSettings({ isBiometricEnabled: !settings.isBiometricEnabled })}
-              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer ${
-                settings.isBiometricEnabled
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
-                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-              }`}
-              title="Toggle Biometric / Fingerprint Unlock"
-            >
-              <Fingerprint size={14} />
-              <span>{settings.isBiometricEnabled ? 'Biometrics On' : 'Biometrics Off'}</span>
             </button>
 
             <button

@@ -4056,7 +4056,6 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         currency: 'Base Currency',
         theme: 'App Appearance Theme',
         isPinEnabled: 'Security PIN Lock',
-        isBiometricsEnabled: 'Biometrics / Face Unlock',
         notificationHour: 'Daily Notification Hour',
         privacyMode: 'Privacy / Obscure Balances Mode',
         userName: 'Profile Name',

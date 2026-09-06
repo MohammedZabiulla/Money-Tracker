@@ -316,7 +316,7 @@ function MainApp() {
         <div className="fixed inset-0 z-[130] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-base font-black text-slate-900 dark:text-white">Quick Add & Shortcuts</h3>
+              <h3 className="text-base font-black text-slate-900 dark:text-white">Quick Actions</h3>
               <button onClick={() => setShowQuickAddMenu(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 cursor-pointer">
                 <X size={16} />
               </button>
@@ -344,25 +344,25 @@ function MainApp() {
                 <span className="text-[10px] text-slate-500">Between accounts</span>
               </button>
               <button
+                onClick={() => { setShowQuickAddMenu(false); handleOpenAdd('CARD_PAYMENT'); }}
+                className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-left hover:scale-102 transition-all cursor-pointer"
+              >
+                <span className="text-xs font-bold text-rose-700 dark:text-rose-300 block">💳 Card Bill</span>
+                <span className="text-[10px] text-slate-500">Pay credit bill</span>
+              </button>
+              <button
+                onClick={() => { setShowQuickAddMenu(false); handleOpenAdd('INVESTMENT_CONTRIBUTION'); }}
+                className="p-3 rounded-2xl bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-900 text-left hover:scale-102 transition-all cursor-pointer"
+              >
+                <span className="text-xs font-bold text-cyan-700 dark:text-cyan-300 block">📈 Invest</span>
+                <span className="text-[10px] text-slate-500">Asset deposit</span>
+              </button>
+              <button
                 onClick={() => { setShowQuickAddMenu(false); handleOpenAdd('MONEY_LENT'); }}
                 className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-left hover:scale-102 transition-all cursor-pointer"
               >
-                <span className="text-xs font-bold text-amber-700 dark:text-amber-300 block">🏦 Loan / Debt</span>
-                <span className="text-[10px] text-slate-500">Lent or borrowed</span>
-              </button>
-              <button
-                onClick={() => { setShowQuickAddMenu(false); setShowNotesModal(true); }}
-                className="p-3 rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-900 text-left hover:scale-102 transition-all cursor-pointer"
-              >
-                <span className="text-xs font-bold text-teal-700 dark:text-teal-300 block">📝 Quick Note</span>
-                <span className="text-[10px] text-slate-500">Mindful list</span>
-              </button>
-              <button
-                onClick={() => { setShowQuickAddMenu(false); setShowBudgetsModal(true); }}
-                className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 text-left hover:scale-102 transition-all cursor-pointer"
-              >
-                <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300 block">📊 Budgets</span>
-                <span className="text-[10px] text-slate-500">Spending limits</span>
+                <span className="text-xs font-bold text-amber-700 dark:text-amber-300 block">🤝 Lend / Borrow</span>
+                <span className="text-[10px] text-slate-500">Debt tracking</span>
               </button>
             </div>
           </div>

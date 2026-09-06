@@ -505,7 +505,6 @@ export interface AppSettings {
   isPinEnabled: boolean;
   pinHash?: string;
   autoLockMinutes: number; // 0 = immediate, 1, 5, 15
-  isBiometricEnabled: boolean;
   isScreenshotProtectionEnabled: boolean;
   hasCompletedOnboarding: boolean;
   userName?: string;

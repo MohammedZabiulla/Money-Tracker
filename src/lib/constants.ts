@@ -3153,7 +3153,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   theme: 'system',
   isPinEnabled: false,
   autoLockMinutes: 0,
-  isBiometricEnabled: false,
   isScreenshotProtectionEnabled: false,
   hasCompletedOnboarding: true, // Will start right away or show friendly welcome
   userName: 'Friend',

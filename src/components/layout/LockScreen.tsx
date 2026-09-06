@@ -1,7 +1,7 @@
 import { useScrollLock } from "../../hooks/useScrollLock";
 import React, { useState } from 'react';
 import { useMoney } from '../../context/MoneyContext';
-import { Lock, Fingerprint, Delete, ShieldCheck } from 'lucide-react';
+import { Lock, Delete, ShieldCheck } from 'lucide-react';
 
 export const LockScreen: React.FC = () => {
   useScrollLock(true);
@@ -32,10 +32,6 @@ export const LockScreen: React.FC = () => {
   const handleBackspace = () => {
     setPin(prev => prev.slice(0, -1));
     setError('');
-  };
-
-  const handleBiometric = () => {
-    unlockApp();
   };
 
   return (
@@ -74,13 +70,7 @@ export const LockScreen: React.FC = () => {
             {d}
           </button>
         ))}
-        <button
-          onClick={handleBiometric}
-          className="h-16 rounded-full bg-slate-900 hover:bg-slate-800 active:scale-95 text-emerald-400 flex items-center justify-center border border-slate-800 transition-all"
-          title="Use Fingerprint / Face ID"
-        >
-          <Fingerprint size={26} />
-        </button>
+        <div />
         <button
           onClick={() => handleDigit('0')}
           className="h-16 rounded-full bg-slate-900 hover:bg-slate-800 active:scale-95 text-xl font-semibold flex items-center justify-center border border-slate-800 transition-all"

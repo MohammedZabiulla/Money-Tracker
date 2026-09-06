@@ -35,6 +35,7 @@ import {
 } from './constants';
 import { createActivityEntry } from './activityLogger';
 import { recalculateAllBalances } from './accountingEngine';
+import { safeAdd, safeSubtract } from './currency';
 import * as XLSX from 'xlsx';
 
 export interface AppDataExportOptions {
@@ -548,6 +549,10 @@ export async function parseAppImportFile(file: File): Promise<ParsedAppImportDat
       const recurring: RecurringTransaction[] = Array.isArray(raw.recurring) ? raw.recurring : [];
       const goals: Goal[] = Array.isArray(raw.goals) ? raw.goals : [];
       const templates: TransactionTemplate[] = Array.isArray(raw.templates) ? raw.templates : [];
+      const merchants: Merchant[] = Array.isArray(raw.merchants) ? raw.merchants : [];
+      const paymentApps: PaymentApp[] = Array.isArray(raw.paymentApps) ? raw.paymentApps : [];
+      const reconciliations: AccountReconciliation[] = Array.isArray(raw.reconciliations) ? raw.reconciliations : [];
+      const activityLogs: ActivityLog[] = Array.isArray(raw.activityLogs) ? raw.activityLogs : [];
 
       if (
         transactions.length === 0 &&
@@ -580,6 +585,8 @@ export async function parseAppImportFile(file: File): Promise<ParsedAppImportDat
           accounts,
           creditCards,
           categories: categories.length ? categories : undefined,
+          merchants,
+          paymentApps,
           transactions,
           budgets,
           investments,
@@ -589,6 +596,8 @@ export async function parseAppImportFile(file: File): Promise<ParsedAppImportDat
           recurring,
           goals,
           templates,
+          reconciliations,
+          activityLogs,
           settings: raw.settings,
         },
         rawTransactionsPreview: transactions.slice(0, 50),
@@ -1027,6 +1036,84 @@ export async function parseAppImportFile(file: File): Promise<ParsedAppImportDat
   }
 }
 
+function calculateNetTransactionDeltas(
+  accounts: Account[],
+  cards: CreditCard[],
+  transactions: Transaction[]
+): {
+  accountDeltas: Map<string, number>;
+  cardDeltas: Map<string, number>;
+} {
+  const accountDeltas = new Map<string, number>();
+  const cardDeltas = new Map<string, number>();
+
+  accounts.forEach(a => accountDeltas.set(a.id, 0));
+  cards.forEach(c => cardDeltas.set(c.id, 0));
+
+  const accountMap = new Map(accounts.map(a => [a.id, a.id]));
+  const cardMap = new Map(cards.map(c => [c.id, c.id]));
+
+  const activeTx = transactions.filter(t => !t.isDeleted);
+
+  for (const tx of activeTx) {
+    const amount = Math.abs(Number(tx.amount) || 0);
+    if (amount <= 0) continue;
+
+    const srcAcc = tx.accountId && accountMap.has(tx.accountId) ? tx.accountId : undefined;
+    const srcCard = tx.creditCardId && cardMap.has(tx.creditCardId) ? tx.creditCardId : undefined;
+    const destAcc = tx.toAccountId && accountMap.has(tx.toAccountId) ? tx.toAccountId : undefined;
+    const destCard = tx.toCreditCardId && cardMap.has(tx.toCreditCardId) ? tx.toCreditCardId : undefined;
+
+    switch (tx.type) {
+      case 'EXPENSE':
+        if (srcCard && cardDeltas.has(srcCard)) {
+          cardDeltas.set(srcCard, safeAdd(cardDeltas.get(srcCard)!, amount));
+        } else if (srcAcc && accountDeltas.has(srcAcc)) {
+          accountDeltas.set(srcAcc, safeSubtract(accountDeltas.get(srcAcc)!, amount));
+        }
+        break;
+      case 'INCOME':
+        if (srcCard && cardDeltas.has(srcCard)) {
+          cardDeltas.set(srcCard, safeSubtract(cardDeltas.get(srcCard)!, amount));
+        } else if (srcAcc && accountDeltas.has(srcAcc)) {
+          accountDeltas.set(srcAcc, safeAdd(accountDeltas.get(srcAcc)!, amount));
+        }
+        break;
+      case 'TRANSFER':
+        if (srcAcc && accountDeltas.has(srcAcc)) {
+          accountDeltas.set(srcAcc, safeSubtract(accountDeltas.get(srcAcc)!, amount));
+        } else if (srcCard && cardDeltas.has(srcCard)) {
+          cardDeltas.set(srcCard, safeAdd(cardDeltas.get(srcCard)!, amount));
+        }
+        if (destAcc && accountDeltas.has(destAcc)) {
+          accountDeltas.set(destAcc, safeAdd(accountDeltas.get(destAcc)!, amount));
+        } else if (destCard && cardDeltas.has(destCard)) {
+          cardDeltas.set(destCard, safeSubtract(cardDeltas.get(destCard)!, amount));
+        }
+        break;
+      case 'CARD_PAYMENT':
+        const paySrc = srcAcc || (srcCard ? undefined : tx.creditCardId);
+        if (paySrc && accountDeltas.has(paySrc)) {
+          accountDeltas.set(paySrc, safeSubtract(accountDeltas.get(paySrc)!, amount));
+        }
+        const payDest = destCard || srcCard;
+        if (payDest && cardDeltas.has(payDest)) {
+          cardDeltas.set(payDest, safeSubtract(cardDeltas.get(payDest)!, amount));
+        }
+        break;
+      case 'INVESTMENT_CONTRIBUTION':
+        if (srcCard && cardDeltas.has(srcCard)) {
+          cardDeltas.set(srcCard, safeAdd(cardDeltas.get(srcCard)!, amount));
+        } else if (srcAcc && accountDeltas.has(srcAcc)) {
+          accountDeltas.set(srcAcc, safeSubtract(accountDeltas.get(srcAcc)!, amount));
+        }
+        break;
+    }
+  }
+
+  return { accountDeltas, cardDeltas };
+}
+
 /**
  * Executes the state integration from parsed file data into the application
  */
@@ -1037,6 +1124,109 @@ export function executeAppImport(
 ): LocalStorageState {
   const isReplace = options.mode === 'REPLACE';
   const now = Date.now();
+
+  // If importing a full JSON backup file, restore exact backup state with full auxiliary data & exact balances
+  if (parsed.fileType === 'JSON') {
+    const imported = parsed.data;
+    const finalAccounts = isReplace ? (imported.accounts || []) : [...currentState.accounts, ...(imported.accounts || [])];
+    const finalCreditCards = isReplace ? (imported.creditCards || []) : [...currentState.creditCards, ...(imported.creditCards || [])];
+    const finalCategories = isReplace ? (imported.categories || DEFAULT_CATEGORIES) : [...currentState.categories, ...(imported.categories || [])];
+    const finalTransactions = isReplace ? (imported.transactions || []) : [...currentState.transactions, ...(imported.transactions || [])];
+    const finalBudgets = isReplace ? (imported.budgets || []) : [...currentState.budgets, ...(imported.budgets || [])];
+    const finalInvestments = isReplace ? (imported.investments || []) : [...currentState.investments, ...(imported.investments || [])];
+    const finalLoans = isReplace ? (imported.loans || []) : [...currentState.loans, ...(imported.loans || [])];
+    const finalDebts = isReplace ? (imported.debts || []) : [...currentState.debts, ...(imported.debts || [])];
+    const finalSubscriptions = isReplace ? (imported.subscriptions || []) : [...currentState.subscriptions, ...(imported.subscriptions || [])];
+    const finalGoals = isReplace ? (imported.goals || []) : [...(currentState.goals || []), ...(imported.goals || [])];
+    const finalTemplates = isReplace ? (imported.templates || DEFAULT_TEMPLATES) : [...(currentState.templates || DEFAULT_TEMPLATES), ...(imported.templates || [])];
+    const finalMerchants = isReplace ? (imported.merchants || []) : [...(currentState.merchants || []), ...(imported.merchants || [])];
+    const finalPaymentApps = isReplace ? (imported.paymentApps || []) : [...(currentState.paymentApps || []), ...(imported.paymentApps || [])];
+    const finalRecurring = isReplace ? (imported.recurring || []) : [...(currentState.recurring || []), ...(imported.recurring || [])];
+    const finalReconciliations = isReplace ? (imported.reconciliations || []) : [...(currentState.reconciliations || []), ...(imported.reconciliations || [])];
+    const finalActivityLogs = isReplace ? (imported.activityLogs || []) : [...(imported.activityLogs || []), ...(currentState.activityLogs || [])];
+    const finalSettings = imported.settings ? { ...currentState.settings, ...imported.settings } : currentState.settings;
+
+    let computedAccounts = finalAccounts;
+    let computedCards = finalCreditCards;
+    let computedInvestments = finalInvestments;
+    let computedLoans = finalLoans;
+    let computedDebts = finalDebts;
+
+    if (options.autoCalculateBalances) {
+      const netDeltas = calculateNetTransactionDeltas(finalAccounts, finalCreditCards, finalTransactions);
+      const adjustedAccounts = finalAccounts.map(acc => {
+        if (acc.calculatedBalance !== undefined) {
+          const delta = netDeltas.accountDeltas.get(acc.id) || 0;
+          return {
+            ...acc,
+            openingBalance: safeSubtract(acc.calculatedBalance, delta),
+          };
+        }
+        return acc;
+      });
+
+      const adjustedCards = finalCreditCards.map(card => {
+        if (card.currentOutstanding !== undefined) {
+          const delta = netDeltas.cardDeltas.get(card.id) || 0;
+          return {
+            ...card,
+            openingBalance: safeSubtract(card.currentOutstanding, delta),
+          };
+        }
+        return card;
+      });
+
+      const computed = recalculateAllBalances(
+        adjustedAccounts,
+        adjustedCards,
+        finalInvestments,
+        finalLoans,
+        finalDebts,
+        finalTransactions
+      );
+      computedAccounts = computed.accounts;
+      computedCards = computed.cards;
+      computedInvestments = computed.investments;
+      computedLoans = computed.loans;
+      computedDebts = computed.debts;
+    } else {
+      computedAccounts = finalAccounts.map(acc => ({
+        ...acc,
+        calculatedBalance: acc.calculatedBalance !== undefined ? acc.calculatedBalance : acc.openingBalance,
+      }));
+      computedCards = finalCreditCards.map(c => ({
+        ...c,
+        currentOutstanding: c.currentOutstanding !== undefined ? c.currentOutstanding : c.openingBalance,
+      }));
+    }
+
+    const newActivityLog = createActivityEntry(
+      'SYSTEM',
+      'IMPORT',
+      `Restored full app backup (${finalTransactions.length} transactions, ${finalAccounts.length} accounts) from JSON (${parsed.fileName})`
+    );
+
+    return {
+      ...currentState,
+      accounts: computedAccounts,
+      creditCards: computedCards,
+      categories: finalCategories,
+      merchants: finalMerchants,
+      paymentApps: finalPaymentApps,
+      transactions: finalTransactions,
+      recurring: finalRecurring,
+      subscriptions: finalSubscriptions,
+      budgets: finalBudgets,
+      loans: computedLoans,
+      investments: computedInvestments,
+      debts: computedDebts,
+      reconciliations: finalReconciliations,
+      goals: finalGoals,
+      templates: finalTemplates,
+      settings: finalSettings,
+      activityLogs: [newActivityLog, ...finalActivityLogs].slice(0, 2000),
+    };
+  }
 
   let finalAccounts = isReplace ? [] : [...currentState.accounts];
   let finalCreditCards = isReplace ? [] : [...currentState.creditCards];
