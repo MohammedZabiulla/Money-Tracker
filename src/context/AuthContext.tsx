@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { LocalStorageState } from '../lib/storage';
 import { auth, db, googleProvider } from '../lib/firebase';
-import { signInWithPopup, signInAnonymously, signOut as fbSignOut, onAuthStateChanged, User } from 'firebase/auth';
+import { signInWithPopup, signInAnonymously, signOut as fbSignOut, onAuthStateChanged, getRedirectResult, GoogleAuthProvider, User } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { requestGoogleDriveToken, uploadBackupToGoogleDrive, listGoogleDriveBackups, downloadGoogleDriveBackup, clearGoogleDriveTokenCache } from '../lib/googleDriveService';
+import { requestGoogleDriveToken, uploadBackupToGoogleDrive, listGoogleDriveBackups, downloadGoogleDriveBackup, clearGoogleDriveTokenCache, setGoogleDriveCachedToken, signInWithGoogleDriveRedirect } from '../lib/googleDriveService';
 
 interface AuthContextType {
   user: User | null;
@@ -16,6 +16,7 @@ interface AuthContextType {
   setCloudProvider: (provider: 'firestore' | 'gdrive' | 'none') => void;
   setSyncMode: (mode: 'auto' | 'manual') => void;
   signIn: (provider?: 'firestore' | 'gdrive') => Promise<any>;
+  signInWithGoogleRedirect: () => Promise<void>;
   signOut: () => Promise<void>;
   pushStateToCloud: (state: LocalStorageState, providerOverride?: 'firestore' | 'gdrive') => Promise<void>;
   pullStateFromCloud: (providerOverride?: 'firestore' | 'gdrive') => Promise<LocalStorageState | null>;
@@ -43,7 +44,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [cloudProvider, setCloudProviderState] = useState<'firestore' | 'gdrive' | 'none'>(() => {
-    return (localStorage.getItem('mt_cloud_provider') as any) || 'firestore';
+    const saved = localStorage.getItem('mt_cloud_provider');
+    if (saved === 'firestore') {
+      localStorage.setItem('mt_cloud_provider', 'gdrive');
+      return 'gdrive';
+    }
+    return (saved as any) || 'gdrive';
   });
 
   const [syncMode, setSyncModeState] = useState<'auto' | 'manual'>(() => {
@@ -61,11 +67,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    if (auth) {
+      getRedirectResult(auth)
+        .then((result) => {
+          if (result) {
+            setUser(result.user);
+            const credential = GoogleAuthProvider.credentialFromResult(result);
+            if (credential?.accessToken) {
+              setGoogleDriveCachedToken(credential.accessToken);
+              setSyncStatus('synced');
+              setLastSynced(Date.now());
+              localStorage.setItem('mt_last_synced', String(Date.now()));
+              console.log('Successfully completed Google redirect authentication.');
+            }
+          }
+        })
+        .catch((err) => {
+          console.warn('Firebase getRedirectResult check:', err);
+        });
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
     });
     return () => unsubscribe();
+  }, []);
+
+  const signInWithGoogleRedirect = useCallback(async () => {
+    setSyncStatus('syncing');
+    await signInWithGoogleDriveRedirect();
   }, []);
 
   const signIn = useCallback(async (providerOverride?: 'firestore' | 'gdrive'): Promise<any> => {
@@ -223,6 +254,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCloudProvider,
         setSyncMode,
         signIn,
+        signInWithGoogleRedirect,
         signOut,
         pushStateToCloud,
         pullStateFromCloud,

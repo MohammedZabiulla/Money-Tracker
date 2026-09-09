@@ -1,6 +1,6 @@
 {
   "name": "Money Tracker",
-  "description": "A private, offline-first personal finance application with a reliable accounting engine, Cashew-compatible transaction templates, universal CSV/Excel/JSON exports, comprehensive audit change logging, Google Drive & Firebase Firestore cloud sync and backups, Indian Rupee support, cards, loans, recurring payments, subscriptions, investments, 3D brand emblems, and analytics.",
+  "description": "A private, offline-first personal finance application with a reliable accounting engine, Cashew-compatible transaction templates, universal CSV/Excel/JSON exports, comprehensive audit change logging, Google Drive cloud sync and backups, Indian Rupee support, cards, loans, recurring payments, subscriptions, investments, 3D brand emblems, and analytics.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -1,6 +1,6 @@
 import { LocalStorageState } from '../types';
 import { auth, googleProvider } from './firebase';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, GoogleAuthProvider } from 'firebase/auth';
 
 declare global {
   interface Window {
@@ -34,6 +34,13 @@ export function setGoogleDriveCachedToken(token: string | null) {
   cachedAccessToken = token;
 }
 
+export async function signInWithGoogleDriveRedirect(): Promise<void> {
+  if (!auth) throw new Error('Firebase Auth is not initialized');
+  localStorage.setItem('mt_cloud_provider', 'gdrive');
+  localStorage.setItem('mt_pending_gdrive_auth', 'true');
+  await signInWithRedirect(auth, googleProvider);
+}
+
 export async function requestGoogleDriveToken(clientId?: string): Promise<string> {
   // 1. If we already have a valid in-memory cached token, return it immediately
   if (cachedAccessToken) {
@@ -48,6 +55,7 @@ export async function requestGoogleDriveToken(clientId?: string): Promise<string
 
   pendingAuthPromise = (async () => {
     const customClientId = clientId || localStorage.getItem('money_tracker_google_client_id') || import.meta.env.VITE_GOOGLE_CLIENT_ID || DEFAULT_CLIENT_ID;
+    const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
     // First attempt: Firebase Auth signInWithPopup with GoogleAuthProvider & drive.file scope
     let firebaseFailed = false;
@@ -66,15 +74,19 @@ export async function requestGoogleDriveToken(clientId?: string): Promise<string
       failureReason = firebaseErr?.message || firebaseErr?.code || '';
       console.warn('Firebase signInWithPopup for Drive token encountered an issue:', firebaseErr);
       
-      // If the domain is unauthorized or popup was blocked/closed on mobile, fallback to Google Identity Services
       const isDomainError = failureReason.includes('unauthorized-domain') || failureReason.includes('auth/unauthorized-domain');
       const isPopupError = firebaseErr?.code === 'auth/popup-closed-by-user' || 
                            firebaseErr?.code === 'auth/cancelled-popup-request' ||
                            failureReason.includes('INTERNAL ASSERTION FAILED') ||
                            failureReason.includes('Pending promise');
 
-      if (!isDomainError && !isPopupError && !customClientId) {
-        throw new Error('Google sign-in was cancelled or failed. Please try again.');
+      if (isDomainError) {
+        const domain = typeof window !== 'undefined' ? window.location.hostname : 'logexpense786.ai.studio';
+        throw new Error(`Domain "${domain}" is not authorized. Please add "${domain}" in Firebase Console > Authentication > Settings > Authorized domains.`);
+      }
+
+      if (isPopupError && isMobile) {
+        throw new Error('Google sign-in popup was blocked or closed on your mobile browser. Please use the "Sign in with Redirect (Mobile)" option below.');
       }
     }
 
@@ -106,8 +118,12 @@ export async function requestGoogleDriveToken(clientId?: string): Promise<string
       } catch (gsiErr: any) {
         console.warn('Google Identity Services token fallback error:', gsiErr);
         if (firebaseFailed) {
+          const domain = typeof window !== 'undefined' ? window.location.hostname : 'logexpense786.ai.studio';
           if (failureReason.includes('unauthorized-domain')) {
-            throw new Error('This domain is not authorized yet in Firebase / Google Cloud. Please add logexpense786.ai.studio to Authorized Domains in Firebase Console.');
+            throw new Error(`Domain "${domain}" is not authorized. Please add "${domain}" in Firebase Console > Authentication > Settings > Authorized domains.`);
+          }
+          if (isMobile) {
+            throw new Error('Popup blocked on mobile. Please tap "Sign in with Redirect (Mobile)" or enable popups in Chrome.');
           }
           throw new Error('Google sign-in was closed or blocked. Please check that popups are allowed in your browser settings.');
         }
@@ -119,8 +135,13 @@ export async function requestGoogleDriveToken(clientId?: string): Promise<string
       return cachedAccessToken;
     }
 
+    const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'logexpense786.ai.studio';
     if (failureReason.includes('unauthorized-domain')) {
-      throw new Error('This domain (logexpense786.ai.studio) is not yet added to Firebase Authorized Domains.');
+      throw new Error(`Domain "${currentDomain}" is not yet added to Firebase Authorized Domains. Please add "${currentDomain}" in Firebase Console.`);
+    }
+
+    if (isMobile) {
+      throw new Error('Google sign-in was closed or blocked. Tap "Sign in with Redirect (Mobile)" below.');
     }
 
     throw new Error('Google Drive access token could not be obtained. Please allow popups and ensure you are signed in.');

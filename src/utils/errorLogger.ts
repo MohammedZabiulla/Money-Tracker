@@ -64,8 +64,20 @@ export const initUniversalErrorCapturer = () => {
 
   window.onunhandledrejection = (event) => {
     const reason = event.reason;
+    const msg = reason?.message || String(reason) || 'Unhandled Promise Rejection';
+    
+    // Suppress benign internal Firebase Auth SDK artifacts when popups are cancelled or blocked on mobile
+    if (
+      msg.includes('INTERNAL ASSERTION FAILED: Pending promise was never set') ||
+      msg.includes('auth/popup-closed-by-user') ||
+      msg.includes('auth/cancelled-popup-request')
+    ) {
+      console.warn('[UniversalErrorCapturer] Suppressed benign Firebase Auth popup rejection:', msg);
+      return;
+    }
+
     saveErrorLog({
-      message: reason?.message || String(reason) || 'Unhandled Promise Rejection',
+      message: msg,
       stack: reason?.stack || undefined,
       type: 'promise',
     });

@@ -1,21 +1,23 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, signOut as fbSignOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+
+// Fallback configuration for standard Firebase Auth & Google Drive OAuth
+// No locked Firestore database dependency required
+const fallbackFirebaseConfig = {
+  projectId: "gen-lang-client-0862665518",
+  appId: "1:288837409172:web:bfb0f059299bb75ce49781",
+  apiKey: "AIzaSyAF_VJMVpUB7MCvPXV-RJEGI_357XoBpUo",
+  authDomain: "gen-lang-client-0862665518.firebaseapp.com",
+};
 
 let app: any = null;
 let auth: any = null;
-let db: any = null;
+const db: any = null; // Decoupled from locked Firestore
 
 try {
-  app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+  app = !getApps().length ? initializeApp(fallbackFirebaseConfig) : getApps()[0];
   if (app) {
     auth = getAuth(app);
-    try {
-      db = getFirestore(app);
-    } catch (dbErr) {
-      console.warn('Firestore database not found or unprovisioned:', dbErr);
-    }
   }
 } catch (err) {
   console.warn('Firebase initialization error:', err);

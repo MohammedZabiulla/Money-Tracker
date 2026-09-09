@@ -46,6 +46,10 @@ import {
   KeyRound,
   Cloud,
   Bug,
+  Copy,
+  Check,
+  ExternalLink,
+  Smartphone,
 } from 'lucide-react';
 
 export const MoreView: React.FC = React.memo(() => {
@@ -88,6 +92,23 @@ export const MoreView: React.FC = React.memo(() => {
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const auth = useAuth();
   const [cloudMessage, setCloudMessage] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
+
+  const handleCopyDomain = () => {
+    const domain = window.location.hostname;
+    navigator.clipboard.writeText(domain);
+    setCopiedDomain(true);
+    setTimeout(() => setCopiedDomain(false), 2000);
+  };
+
+  const handleMobileRedirectSync = async () => {
+    try {
+      setCloudMessage('Redirecting to Google sign-in (mobile safe)...');
+      await auth.signInWithGoogleRedirect();
+    } catch (err: any) {
+      setCloudMessage(err?.message || 'Redirect failed');
+    }
+  };
 
   const handleCloudSync = async () => {
     try {
@@ -584,19 +605,8 @@ export const MoreView: React.FC = React.memo(() => {
           {/* Cloud Configuration Options */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white/60 dark:bg-slate-900/60 p-3.5 rounded-2xl border border-blue-500/20">
             <div>
-              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Select Cloud Provider</label>
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Primary Cloud Backup</label>
               <div className="flex space-x-2">
-                <button
-                  type="button"
-                  onClick={() => auth.setCloudProvider('firestore')}
-                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    auth.cloudProvider === 'firestore'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                  }`}
-                >
-                  Cloud Firestore
-                </button>
                 <button
                   type="button"
                   onClick={() => auth.setCloudProvider('gdrive')}
@@ -606,7 +616,7 @@ export const MoreView: React.FC = React.memo(() => {
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                   }`}
                 >
-                  Google Drive
+                  Google Drive (Free)
                 </button>
               </div>
             </div>
@@ -640,9 +650,67 @@ export const MoreView: React.FC = React.memo(() => {
             </div>
           </div>
 
+          {auth.cloudProvider === 'gdrive' && !auth.user && (
+            <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/70 border border-blue-500/20 text-xs space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center space-x-2">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">App Domain:</span>
+                  <code className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-mono text-[11px] font-bold border border-blue-200 dark:border-blue-900">
+                    {typeof window !== 'undefined' ? window.location.hostname : 'logexpense786.ai.studio'}
+                  </code>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyDomain}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center space-x-1 transition-all cursor-pointer"
+                >
+                  {copiedDomain ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                  <span>{copiedDomain ? 'Copied' : 'Copy Domain'}</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                To enable Google sign-in on mobile or custom domains, ensure your domain is added in{' '}
+                <a
+                  href="https://console.firebase.google.com/project/gen-lang-client-0862665518/authentication/settings"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 font-bold underline inline-flex items-center space-x-0.5"
+                >
+                  <span>Firebase Authorized Domains</span>
+                  <ExternalLink size={10} />
+                </a>.
+              </p>
+            </div>
+          )}
+
           {cloudMessage && (
-            <div className="p-3 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-800 dark:text-blue-200 text-xs font-semibold">
-              {cloudMessage}
+            <div className={`p-3 rounded-xl text-xs font-semibold space-y-1.5 ${
+              cloudMessage.includes('Domain') || cloudMessage.includes('not authorized')
+                ? 'bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200'
+                : 'bg-blue-500/15 border border-blue-500/30 text-blue-800 dark:text-blue-200'
+            }`}>
+              <div>{cloudMessage}</div>
+              {(cloudMessage.includes('Domain') || cloudMessage.includes('not authorized') || cloudMessage.includes('Firebase Console')) && (
+                <div className="pt-1 flex items-center space-x-2">
+                  <a
+                    href="https://console.firebase.google.com/project/gen-lang-client-0862665518/authentication/settings"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition-colors"
+                  >
+                    <span>Open Firebase Settings</span>
+                    <ExternalLink size={11} />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleCopyDomain}
+                    className="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-[11px] hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors flex items-center space-x-1"
+                  >
+                    {copiedDomain ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                    <span>{copiedDomain ? 'Copied' : 'Copy Domain'}</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -654,6 +722,17 @@ export const MoreView: React.FC = React.memo(() => {
               <Cloud size={14} />
               <span>{auth.user ? `Sync / Backup Now (${auth.cloudProvider === 'gdrive' ? 'Google Drive' : 'Firestore'})` : 'Sign in & Sync Now'}</span>
             </button>
+            {auth.cloudProvider === 'gdrive' && !auth.user && (
+              <button
+                type="button"
+                onClick={handleMobileRedirectSync}
+                className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-1.5 cursor-pointer"
+                title="Use if popup is blocked on mobile Chrome"
+              >
+                <Smartphone size={14} />
+                <span>Mobile Sign-in</span>
+              </button>
+            )}
             <button
               onClick={handleCloudRestore}
               className="flex-1 min-w-[140px] py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer"
