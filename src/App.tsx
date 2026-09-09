@@ -204,6 +204,26 @@ function MainApp() {
         )}
 
         {currentTab === 'more' && <MoreView />}
+
+        {/* Public Compliance & Brand Footer (Required for Google OAuth Verification) */}
+        <footer className="mt-8 mb-20 text-center text-xs text-slate-600 dark:text-slate-400 space-y-1.5 py-4 border-t border-slate-200/60 dark:border-slate-800/60">
+          <p className="font-semibold text-slate-700 dark:text-slate-300">
+            Mohammed Saqlain's Apps • Money Tracker
+          </p>
+          <div className="flex items-center justify-center space-x-3 text-[11px]">
+            <a href="/privacy.html" target="_blank" rel="noopener noreferrer" className="hover:text-emerald-600 dark:hover:text-emerald-400 underline">
+              Privacy Policy
+            </a>
+            <span>•</span>
+            <a href="/terms.html" target="_blank" rel="noopener noreferrer" className="hover:text-emerald-600 dark:hover:text-emerald-400 underline">
+              Terms of Service
+            </a>
+            <span>•</span>
+            <a href="mailto:muhammadzabiulla786@gmail.com" className="hover:text-emerald-600 dark:hover:text-emerald-400">
+              Developer Contact
+            </a>
+          </div>
+        </footer>
       </main>
 
       {/* Floating Action Buttons: Search (Top) and Add Transaction (Bottom) */}

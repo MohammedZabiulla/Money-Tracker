@@ -3166,6 +3166,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     largeTransactionThreshold: 10000,
     monthlySummary: true,
   },
+  cloudSyncConfig: {
+    provider: 'firestore',
+    mode: 'auto',
+  },
 };
 
 export const DEFAULT_TEMPLATES: TransactionTemplate[] = [

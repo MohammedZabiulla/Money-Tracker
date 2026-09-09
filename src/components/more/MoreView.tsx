@@ -22,6 +22,7 @@ import { AppImportExportModal } from './AppImportExportModal';
 import { TrashModal } from '../common/TrashModal';
 import { FAQGuideSection } from './FAQGuideSection';
 import { NotesManagementModal } from './NotesManagementModal';
+import { ErrorLogsModal } from '../common/ErrorLogsModal';
 import {
   FileSpreadsheet,
   Download,
@@ -44,6 +45,7 @@ import {
   FileText,
   KeyRound,
   Cloud,
+  Bug,
 } from 'lucide-react';
 
 export const MoreView: React.FC = React.memo(() => {
@@ -83,13 +85,14 @@ export const MoreView: React.FC = React.memo(() => {
   const [showAppImportExportModal, setShowAppImportExportModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [showNotesModal, setShowNotesModal] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const auth = useAuth();
   const [cloudMessage, setCloudMessage] = useState<string | null>(null);
 
   const handleCloudSync = async () => {
     try {
       if (!auth.user) {
-        await auth.signIn();
+        await auth.signIn(auth.cloudProvider === 'none' ? 'firestore' : auth.cloudProvider);
       }
       const currentState = {
         accounts: context.accounts,
@@ -111,8 +114,9 @@ export const MoreView: React.FC = React.memo(() => {
         activityLogs: context.activityLogs,
       };
       await auth.pushStateToCloud(currentState);
-      setCloudMessage('Data securely synced to Cloud Firestore! Safe across all devices.');
-      setTimeout(() => setCloudMessage(null), 5000);
+      const provName = auth.cloudProvider === 'gdrive' ? 'Google Drive' : 'Cloud Firestore';
+      setCloudMessage(`Data securely synced to ${provName}! Includes accounts, transactions, trash bin & audit logs.`);
+      setTimeout(() => setCloudMessage(null), 6000);
     } catch (err: any) {
       setCloudMessage(err?.message || 'Cloud sync failed.');
     }
@@ -121,13 +125,13 @@ export const MoreView: React.FC = React.memo(() => {
   const handleCloudRestore = async () => {
     try {
       if (!auth.user) {
-        await auth.signIn();
+        await auth.signIn(auth.cloudProvider === 'none' ? 'firestore' : auth.cloudProvider);
       }
       const cloudState = await auth.pullStateFromCloud();
       if (cloudState) {
         context.loadBackupState(cloudState);
-        setCloudMessage('Data successfully restored from Cloud sync!');
-        setTimeout(() => setCloudMessage(null), 5000);
+        setCloudMessage('Data successfully restored from cloud backup (accounts, transactions, trash & audit logs)!');
+        setTimeout(() => setCloudMessage(null), 6000);
       } else {
         setCloudMessage('No cloud backup found for this account.');
       }
@@ -136,10 +140,11 @@ export const MoreView: React.FC = React.memo(() => {
     }
   };
   const [showPinModal, setShowPinModal] = useState(false);
+  const [showErrorLogsModal, setShowErrorLogsModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [confirmPinInput, setConfirmPinInput] = useState('');
   const [pinError, setPinError] = useState('');
-  const isAnyModalOpen = showGoalModal || showCategoryModal || showSubscriptionModal || showRecurringModal || showInvestmentModal || showLentBorrowedModal || showEmblemStudioModal || showPaymentAppModal || showBudgetModal || showLoanModal || showTemplateModal || showActivityLogModal || showTrashModal || showCashewImportModal || showAppImportExportModal || showGuideModal || showNotesModal || showPinModal;
+  const isAnyModalOpen = showGoalModal || showCategoryModal || showSubscriptionModal || showRecurringModal || showInvestmentModal || showLentBorrowedModal || showEmblemStudioModal || showPaymentAppModal || showBudgetModal || showLoanModal || showTemplateModal || showActivityLogModal || showTrashModal || showCashewImportModal || showAppImportExportModal || showGuideModal || showNotesModal || showPinModal || showErrorLogsModal;
   useScrollLock(isAnyModalOpen);
 
   const [importExportInitialTab, setImportExportInitialTab] = useState<'EXPORT' | 'IMPORT'>('EXPORT');
@@ -552,7 +557,7 @@ export const MoreView: React.FC = React.memo(() => {
           </div>
         </div>
 
-        {/* 3. Cloud Firestore Multi-Device Sync & Backup */}
+        {/* 3. Cloud Multi-Device Sync & Backup (Firestore or Google Drive) */}
         <div className="p-5 rounded-3xl bg-gradient-to-br from-blue-500/10 via-cyan-500/10 to-indigo-500/10 border-2 border-blue-500/30 dark:border-blue-500/40 shadow-xs flex flex-col justify-between space-y-4">
           <div className="flex items-start justify-between flex-wrap gap-2">
             <div className="flex items-center space-x-3.5">
@@ -561,18 +566,77 @@ export const MoreView: React.FC = React.memo(() => {
               </div>
               <div>
                 <div className="flex items-center space-x-2">
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">Cloud Firestore Live Sync & Backup</h4>
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">Cloud Multi-Device Live Sync & Backup</h4>
                   <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-extrabold">
                     {auth.user ? (auth.user.isAnonymous ? 'Cloud Session' : auth.user.email || 'Connected') : 'Offline'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Securely store your accounts & transactions in the cloud so your data is never lost even if you lose your device.
+                  Choose your cloud provider and sync mode. Automatically backs up accounts, transactions, <b>trash bin</b> & <b>audit logs</b>.
                 </p>
               </div>
             </div>
             <div className="text-right text-[11px] text-slate-400">
               {auth.syncStatus === 'syncing' ? 'Syncing...' : auth.syncStatus === 'error' ? 'Sync Error' : auth.lastSynced ? `Synced: ${new Date(auth.lastSynced).toLocaleTimeString()}` : 'Not synced yet'}
+            </div>
+          </div>
+
+          {/* Cloud Configuration Options */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white/60 dark:bg-slate-900/60 p-3.5 rounded-2xl border border-blue-500/20">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Select Cloud Provider</label>
+              <div className="flex space-x-2">
+                <button
+                  type="button"
+                  onClick={() => auth.setCloudProvider('firestore')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    auth.cloudProvider === 'firestore'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  Cloud Firestore
+                </button>
+                <button
+                  type="button"
+                  onClick={() => auth.setCloudProvider('gdrive')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    auth.cloudProvider === 'gdrive'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  Google Drive
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Sync & Backup Mode</label>
+              <div className="flex space-x-2">
+                <button
+                  type="button"
+                  onClick={() => auth.setSyncMode('auto')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    auth.syncMode === 'auto'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  Automatic (Live)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => auth.setSyncMode('manual')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    auth.syncMode === 'manual'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  Manual Only
+                </button>
+              </div>
             </div>
           </div>
 
@@ -588,7 +652,7 @@ export const MoreView: React.FC = React.memo(() => {
               className="flex-1 min-w-[140px] py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/20 flex items-center justify-center space-x-1.5 cursor-pointer"
             >
               <Cloud size={14} />
-              <span>{auth.user ? 'Sync Now to Cloud' : 'Sign in & Backup to Cloud'}</span>
+              <span>{auth.user ? `Sync / Backup Now (${auth.cloudProvider === 'gdrive' ? 'Google Drive' : 'Firestore'})` : 'Sign in & Sync Now'}</span>
             </button>
             <button
               onClick={handleCloudRestore}
@@ -599,7 +663,7 @@ export const MoreView: React.FC = React.memo(() => {
             </button>
             {auth.user && !auth.user.isAnonymous && (
               <button
-                onClick={() => auth.signOut()}
+                onClick={() => setShowSignOutConfirm(true)}
                 className="py-2.5 px-4 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 text-xs font-bold transition-all cursor-pointer"
               >
                 Sign Out
@@ -608,6 +672,42 @@ export const MoreView: React.FC = React.memo(() => {
           </div>
         </div>
       </div>
+
+      {/* Sign Out Confirmation Modal */}
+      {showSignOutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/10 text-rose-600 flex items-center justify-center mx-auto mb-2">
+              <KeyRound size={24} />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-lg font-black text-slate-900 dark:text-white">Sign Out Confirmation</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Are you sure you want to sign out? Your cloud sync sessions will be disconnected.
+              </p>
+            </div>
+            <div className="flex space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSignOutConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSignOutConfirm(false);
+                  auth.signOut();
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-md shadow-rose-600/20 cursor-pointer"
+              >
+                Yes, Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --------------------------------------------------------------------- */}
       {/* 4. APP PIN & BIOMETRIC / INTERACTIVE APP GUIDE & HANDBOOK */}
@@ -707,6 +807,31 @@ export const MoreView: React.FC = React.memo(() => {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Developer Universal Error Logs Card */}
+      <div className="p-5 bg-gradient-to-br from-rose-500/10 via-orange-500/10 to-slate-500/10 dark:from-rose-950/40 dark:via-orange-950/40 dark:to-slate-900/40 rounded-3xl border border-rose-500/30 dark:border-rose-500/20 flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0 shadow-xs">
+        <div className="flex items-center space-x-3.5">
+          <div className="w-10 h-10 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+            <Bug size={20} />
+          </div>
+          <div>
+            <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white">
+              Developer Universal Error Logs
+            </h4>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              Inspect caught runtime, promise, and React rendering error logs with line numbers and stack traces.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowErrorLogsModal(true)}
+          className="w-full sm:w-auto py-2.5 px-5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer transition-all shrink-0"
+        >
+          <span>View Error Logs</span>
+          <ArrowRight size={14} />
+        </button>
       </div>
 
       {/* --------------------------------------------------------------------- */}
@@ -989,6 +1114,7 @@ export const MoreView: React.FC = React.memo(() => {
           </div>
         </div>
       )}
+      <ErrorLogsModal isOpen={showErrorLogsModal} onClose={() => setShowErrorLogsModal(false)} />
     </div>
   );
 });

@@ -48,6 +48,7 @@ import { getDemoData } from '../lib/demoData';
 import { DEFAULT_CATEGORIES, DEFAULT_PAYMENT_APPS, DEFAULT_APP_SETTINGS, CARD_THEMES } from '../lib/constants';
 import { createActivityEntry, computeFieldDiffs, computeTransactionDiffs } from '../lib/activityLogger';
 import { formatINR } from '../lib/currency';
+import { useAuth } from './AuthContext';
 
 // Helper to calculate goal status correctly based on current amount, target amount, and previous status
 const calculateGoalStatus = (
@@ -272,6 +273,34 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [activeMonth, setActiveMonth] = useState<string>(() => new Date().toISOString().substring(0, 7));
   const [isLocked, setIsLocked] = useState<boolean>(() => !!loadInitialState().settings.isPinEnabled);
   const [undoToast, setUndoToast] = useState<{ message: string; onUndo: () => void } | null>(null);
+  const auth = useAuth();
+
+  // Automatic sync on state changes when syncMode === 'auto' and cloudProvider !== 'none'
+  useEffect(() => {
+    if (!auth.user || auth.cloudProvider === 'none' || auth.syncMode !== 'auto') return;
+    const timer = setTimeout(() => {
+      auth.pushStateToCloud({
+        accounts: state.accounts,
+        creditCards: state.creditCards,
+        categories: state.categories,
+        merchants: state.merchants,
+        paymentApps: state.paymentApps,
+        transactions: state.transactions,
+        templates: state.templates,
+        recurring: state.recurring,
+        subscriptions: state.subscriptions,
+        budgets: state.budgets,
+        goals: state.goals,
+        loans: state.loans,
+        investments: state.investments,
+        debts: state.debts,
+        reconciliations: state.reconciliations,
+        settings: state.settings,
+        activityLogs: state.activityLogs,
+      });
+    }, 5000); // 5s debounce for auto-syncing changes
+    return () => clearTimeout(timer);
+  }, [state, auth.cloudProvider, auth.syncMode, auth.user]);
 
   // One-time migration to fix imported transfers that were missing account linking
   const hasRunMigrationRef = useRef(false);
@@ -1637,20 +1666,45 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const restoreAllTrash = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      transactions: prev.transactions.map(t => ({ ...t, isDeleted: false, deletedAt: undefined })),
-      accounts: prev.accounts.map(a => ({ ...a, isDeleted: false, deletedAt: undefined })),
-      creditCards: prev.creditCards.map(c => ({ ...c, isDeleted: false, deletedAt: undefined })),
-      budgets: prev.budgets.map(b => ({ ...b, isDeleted: false, deletedAt: undefined })),
-      subscriptions: prev.subscriptions.map(s => ({ ...s, isDeleted: false, deletedAt: undefined })),
-      recurring: (prev.recurring || []).map(r => ({ ...r, isDeleted: false, deletedAt: undefined })),
-      goals: (prev.goals || []).map(g => ({ ...g, isDeleted: false, deletedAt: undefined })),
-      loans: (prev.loans || []).map(l => ({ ...l, isDeleted: false, deletedAt: undefined })),
-      investments: (prev.investments || []).map(i => ({ ...i, isDeleted: false, deletedAt: undefined })),
-      debts: (prev.debts || []).map(d => ({ ...d, isDeleted: false, deletedAt: undefined })),
-      activityLogs: appendActivityLog(prev.activityLogs, 'SYSTEM', 'RESTORE', `Restored all items from Trash bin`),
-    }));
+    setState(prev => {
+      try {
+        const cached = localStorage.getItem('mt_pre_wipe_backup');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.accounts && parsed.accounts.length > 0) {
+            localStorage.removeItem('mt_pre_wipe_backup');
+            return {
+              ...parsed,
+              activityLogs: appendActivityLog(parsed.activityLogs, 'SYSTEM', 'RESTORE', `Restored all accounts, cards, and transactions from pre-wipe backup`),
+            };
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to restore from pre-wipe backup:', e);
+      }
+
+      const unDeletedAccounts = prev.accounts.map(a => ({ ...a, isDeleted: false, deletedAt: undefined }));
+      const unDeletedCards = prev.creditCards.map(c => ({ ...c, isDeleted: false, deletedAt: undefined }));
+
+      // Fallback if accounts/cards were somehow completely missing/empty
+      const finalAccounts = unDeletedAccounts.length > 0 ? unDeletedAccounts : loadInitialState().accounts;
+      const finalCards = unDeletedCards.length > 0 ? unDeletedCards : loadInitialState().creditCards;
+
+      return {
+        ...prev,
+        transactions: prev.transactions.map(t => ({ ...t, isDeleted: false, deletedAt: undefined })),
+        accounts: finalAccounts,
+        creditCards: finalCards,
+        budgets: prev.budgets.map(b => ({ ...b, isDeleted: false, deletedAt: undefined })),
+        subscriptions: prev.subscriptions.map(s => ({ ...s, isDeleted: false, deletedAt: undefined })),
+        recurring: (prev.recurring || []).map(r => ({ ...r, isDeleted: false, deletedAt: undefined })),
+        goals: (prev.goals || []).map(g => ({ ...g, isDeleted: false, deletedAt: undefined })),
+        loans: (prev.loans || []).map(l => ({ ...l, isDeleted: false, deletedAt: undefined })),
+        investments: (prev.investments || []).map(i => ({ ...i, isDeleted: false, deletedAt: undefined })),
+        debts: (prev.debts || []).map(d => ({ ...d, isDeleted: false, deletedAt: undefined })),
+        activityLogs: appendActivityLog(prev.activityLogs, 'SYSTEM', 'RESTORE', `Restored all items from Trash bin`),
+      };
+    });
   }, []);
 
   // ----------------------------------------------------
@@ -4136,26 +4190,39 @@ export const MoneyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const clearAllData = useCallback(() => {
     setState(prev => {
+      try {
+        localStorage.setItem('mt_pre_wipe_backup', JSON.stringify(prev));
+      } catch (e) {
+        console.warn('Failed to cache pre-wipe state:', e);
+      }
+
       const trashedTransactions = prev.transactions.map(t => 
         t.isDeleted ? t : { ...t, isDeleted: true, deletedAt: Date.now() }
       );
+      const trashedAccounts = (prev.accounts || []).map(a => a.isDeleted ? a : { ...a, isDeleted: true, deletedAt: Date.now() });
+      const trashedCards = (prev.creditCards || []).map(c => c.isDeleted ? c : { ...c, isDeleted: true, deletedAt: Date.now() });
+      const trashedBudgets = (prev.budgets || []).map(b => b.isDeleted ? b : { ...b, isDeleted: true, deletedAt: Date.now() });
+      const trashedSubscriptions = (prev.subscriptions || []).map(s => s.isDeleted ? s : { ...s, isDeleted: true, deletedAt: Date.now() });
+      const trashedRecurring = (prev.recurring || []).map(r => r.isDeleted ? r : { ...r, isDeleted: true, deletedAt: Date.now() });
+      const trashedGoals = (prev.goals || []).map(g => g.isDeleted ? g : { ...g, isDeleted: true, deletedAt: Date.now() });
+      const trashedLoans = (prev.loans || []).map(l => l.isDeleted ? l : { ...l, isDeleted: true, deletedAt: Date.now() });
+      const trashedInvestments = (prev.investments || []).map(i => i.isDeleted ? i : { ...i, isDeleted: true, deletedAt: Date.now() });
+      const trashedDebts = (prev.debts || []).map(d => d.isDeleted ? d : { ...d, isDeleted: true, deletedAt: Date.now() });
+
       return {
-        accounts: [],
-        creditCards: [],
-        categories: DEFAULT_CATEGORIES,
-        merchants: [],
-        paymentApps: DEFAULT_PAYMENT_APPS,
+        ...prev,
+        accounts: trashedAccounts,
+        creditCards: trashedCards,
+        budgets: trashedBudgets,
+        subscriptions: trashedSubscriptions,
+        recurring: trashedRecurring,
+        goals: trashedGoals,
+        loans: trashedLoans,
+        investments: trashedInvestments,
+        debts: trashedDebts,
         transactions: trashedTransactions,
-        recurring: [],
-        subscriptions: [],
-        budgets: [],
-        goals: [],
-        loans: [],
-        investments: [],
-        debts: [],
         reconciliations: [],
-        settings: { ...DEFAULT_APP_SETTINGS, userName: prev.settings.userName || 'User' },
-        activityLogs: appendActivityLog(prev.activityLogs, 'SYSTEM', 'RESET', `Purged all user records and moved ${prev.transactions.length} transactions to Trash`),
+        activityLogs: appendActivityLog(prev.activityLogs, 'SYSTEM', 'RESET', `Moved all records and transactions to Trash`),
       };
     });
   }, []);

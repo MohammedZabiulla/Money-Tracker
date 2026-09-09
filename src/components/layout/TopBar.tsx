@@ -107,10 +107,18 @@ export const TopBar: React.FC<TopBarProps> = ({ currentTab }) => {
             <span className="font-bold text-base sm:text-lg leading-none">₹</span>
           </div>
           <div>
-            <div className="flex items-center space-x-1.5">
-              <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
-                Money Tracker
-              </h1>
+            <div className="flex flex-col">
+              <div className="flex items-center space-x-1.5">
+                <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
+                  Money Tracker
+                </h1>
+                <span className="hidden md:inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40">
+                  Mohammed Saqlain's Apps
+                </span>
+              </div>
+              <span className="md:hidden text-[9px] text-slate-400 font-medium">
+                by Mohammed Saqlain's Apps
+              </span>
             </div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400 font-normal flex items-center">
               {currentTab === 'home' && (

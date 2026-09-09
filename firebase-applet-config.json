@@ -1,12 +1,11 @@
 {
-  "projectId": "coherent-planet-gq6d2",
-  "appId": "1:85404108978:web:88739a0c962a92be0821ab",
-  "apiKey": "AIzaSyCh4_Ezzc01JhtpVRBDrdlh_ahRy1_scOQ",
-  "authDomain": "coherent-planet-gq6d2.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-pdfapparchitect-f52e85de-e270-4cea-bec2-128b0479be2e",
-  "storageBucket": "coherent-planet-gq6d2.firebasestorage.app",
-  "messagingSenderId": "85404108978",
+  "projectId": "gen-lang-client-0862665518",
+  "appId": "1:288837409172:web:bfb0f059299bb75ce49781",
+  "apiKey": "AIzaSyAF_VJMVpUB7MCvPXV-RJEGI_357XoBpUo",
+  "authDomain": "gen-lang-client-0862665518.firebaseapp.com",
+  "storageBucket": "gen-lang-client-0862665518.firebasestorage.app",
+  "messagingSenderId": "288837409172",
   "measurementId": "",
-  "oAuthClientId": "85404108978-m94v8hu396t04hu2qk27lvrioai7afkr.apps.googleusercontent.com",
+  "oAuthClientId": "288837409172-39lnnindd31qsr999cdi4ikjb4t8u3ho.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

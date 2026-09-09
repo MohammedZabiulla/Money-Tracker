@@ -86,16 +86,10 @@ export const AppImportExportModal: React.FC<AppImportExportModalProps> = ({
   };
 
   const handleGoogleDriveBackup = async () => {
-    const clientId = getClientId();
-    if (!clientId) {
-      setIsClientIdModalOpen(true);
-      return;
-    }
-
     setIsDriveLoading(true);
     setDriveMessage(null);
     try {
-      const token = await requestGoogleDriveToken(clientId);
+      const token = await requestGoogleDriveToken(getClientId());
       const state = {
         accounts: context.accounts,
         creditCards: context.creditCards,
@@ -130,16 +124,10 @@ export const AppImportExportModal: React.FC<AppImportExportModalProps> = ({
   };
 
   const handleOpenGoogleDriveRestore = async () => {
-    const clientId = getClientId();
-    if (!clientId) {
-      setIsClientIdModalOpen(true);
-      return;
-    }
-
     setIsDriveLoading(true);
     setDriveMessage(null);
     try {
-      const token = await requestGoogleDriveToken(clientId);
+      const token = await requestGoogleDriveToken(getClientId());
       const files = await listGoogleDriveBackups(token);
       setDriveBackupsList(files);
       setIsDriveRestoreModalOpen(true);
@@ -155,11 +143,10 @@ export const AppImportExportModal: React.FC<AppImportExportModalProps> = ({
   };
 
   const handleSelectDriveBackupToRestore = async (fileId: string) => {
-    const clientId = getClientId();
     setIsDriveLoading(true);
     setDriveMessage(null);
     try {
-      const token = await requestGoogleDriveToken(clientId);
+      const token = await requestGoogleDriveToken(getClientId());
       const rawData = await downloadGoogleDriveBackup(token, fileId);
       const parsed = await parseAppImportFile(new File([JSON.stringify(rawData)], 'gdrive_backup.json', { type: 'application/json' }));
       if (!parsed.isValid) {

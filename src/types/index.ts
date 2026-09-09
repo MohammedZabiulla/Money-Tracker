@@ -520,6 +520,11 @@ export interface AppSettings {
     largeTransactionThreshold: number;
     monthlySummary: boolean;
   };
+  cloudSyncConfig?: {
+    provider: 'firestore' | 'gdrive' | 'none';
+    mode: 'auto' | 'manual';
+    googleDriveClientId?: string;
+  };
 }
 
 export interface GoalAllocation {
